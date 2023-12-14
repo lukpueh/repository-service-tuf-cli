@@ -90,17 +90,7 @@ def load_signer(public_key) -> Signer:
     return signer
 
 
-@rstuf.group()  # type: ignore
-def admin2():
-    """POC: alternative admin interface"""
-
-
-@admin2.command()  # type: ignore
-def ceremony() -> None:
-    """POC: Key-only Metadata Ceremony."""
-
-    root = Root()
-
+def configure_online_key(root):
     console.print("Online key")
     while True:
         key = load_public()
@@ -114,6 +104,8 @@ def ceremony() -> None:
         if Confirm.ask("Done?"):
             break
 
+
+def configure_offline_keys(root):
     console.print("Offline keys")
     while True:
         # TODO: add, remove, done, show stat
@@ -125,6 +117,8 @@ def ceremony() -> None:
         if Confirm.ask("Done?"):
             break
 
+
+def sign_root(root):
     metadata = Metadata(root)
     console.print("Sign metadata")
     for keyid in root.roles[Root.type].keyids:
@@ -137,3 +131,20 @@ def ceremony() -> None:
         pprint(metadata.to_dict())
         if Confirm.ask("Done?"):
             break
+
+    return metadata
+
+
+@rstuf.group()  # type: ignore
+def admin2():
+    """POC: alternative admin interface"""
+
+
+@admin2.command()  # type: ignore
+def ceremony() -> None:
+    """POC: Key-only Metadata Ceremony."""
+    console.print("Ceremony")
+    root = Root()
+    configure_online_key(root)
+    configure_offline_keys(root)
+    metadata = sign_root(root)
