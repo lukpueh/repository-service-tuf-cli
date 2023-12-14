@@ -1,3 +1,26 @@
+"""POC: alternative admin cli
+
+Re-implement key loading and signing in admin cli subcommands.
+
+Goals
+-----
+- configure online signer location via uri attached to public key
+ (for repository-service-tuf/repository-service-tuf-worker#427)
+- use state-of-the-art securesystemslib Signer API only
+- make re-usable for similar cli
+- simplify (e.g. avoid custom/redundant abstractions over
+    python-tuf/securesystemslib Metadata API)
+
+TODO
+----
+- Make re-usable for `ceremony`, `metadata update` and `metadata sign`.
+- polish enough so that reviewers can try it out:
+    - handle errors from inputs
+    - clarify and beautify outputs
+- Integrate with existing admin cli
+
+"""
+
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
@@ -7,8 +30,7 @@ from rich.prompt import Confirm, Prompt
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
 
-from repository_service_tuf.cli import console
-from repository_service_tuf.cli.admin import admin
+from repository_service_tuf.cli import console, rstuf
 
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 
@@ -68,20 +90,14 @@ def load_signer(public_key) -> Signer:
     return signer
 
 
-@admin.command()  # type: ignore
-def ceremony2() -> None:
-    """POC: Key-only Metadata Ceremony.
+@rstuf.group()  # type: ignore
+def admin2():
+    """POC: alternative admin interface"""
 
-    This implements the key loading and signing parts of the ceremony command
-    as proof of concept.
 
-    TODO:
-    - Make re-usable for `metadata update` and `metadata sign`.
-    - polish enough so that reviewers can try it out:
-      - handle errors from inputs
-      - clarify and beautify outputs
-    - Integrate with existing cli
-    """
+@admin2.command()  # type: ignore
+def ceremony() -> None:
+    """POC: Key-only Metadata Ceremony."""
 
     root = Root()
 
