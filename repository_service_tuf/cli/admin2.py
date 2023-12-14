@@ -19,8 +19,8 @@ TODO
 - Integrate with existing admin cli
 
 """
-
 from copy import deepcopy
+from typing import Optional
 
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
@@ -75,7 +75,7 @@ def _configure_online_signer() -> str:
     return uri
 
 
-def _load_signer(public_key) -> Signer:
+def _load_signer(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
     # TODO: Give choice -> hsm, sigstore, ...
 
@@ -91,7 +91,7 @@ def _load_signer(public_key) -> Signer:
     return signer
 
 
-def _configure_online_key(root):
+def _configure_online_key(root: Root) -> None:
     console.print("Online key")
     while True:
         key = _load_public()
@@ -107,7 +107,7 @@ def _configure_online_key(root):
             break
 
 
-def _configure_offline_keys(root):
+def _configure_offline_keys(root: Root) -> None:
     console.print("Offline keys")
     while True:
         # TODO: add, remove, done, show stat
@@ -120,7 +120,7 @@ def _configure_offline_keys(root):
             break
 
 
-def _sign_root(root, previous_root=None):
+def _sign_root(root: Root, previous_root: Optional[Root] = None) -> Metadata:
     metadata = Metadata(root)
     console.print("Sign root metadata")
 
