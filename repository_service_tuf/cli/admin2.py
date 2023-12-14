@@ -40,7 +40,7 @@ ONLINE_KEY_URI_FIELD = "x-rstuf-online-key-uri"
 KEY_LABEL_FIELD = "x-rstuf-key-label"
 
 
-def load_public() -> Key:
+def _load_public() -> Key:
     """Ask for details to load public key, load and return."""
     # TODO: Give choice -- data (copy paste), hsm, aws, sigstore, ... -- and
     # consider configuring signer based on that choice. Note that for online and
@@ -63,7 +63,7 @@ def load_public() -> Key:
     return key
 
 
-def configure_online_signer() -> str:
+def _configure_online_signer() -> str:
     """Ask for details to load online signer and return as URI."""
     # TODO: Give choice -- relative path, envvar, aws, gcp, azure, sigstore, ...
 
@@ -75,7 +75,7 @@ def configure_online_signer() -> str:
     return uri
 
 
-def load_signer(public_key) -> Signer:
+def _load_signer(public_key) -> Signer:
     """Ask for details to load signer, load and return."""
     # TODO: Give choice -> hsm, sigstore, ...
 
@@ -91,11 +91,11 @@ def load_signer(public_key) -> Signer:
     return signer
 
 
-def configure_online_key(root):
+def _configure_online_key(root):
     console.print("Online key")
     while True:
-        key = load_public()
-        uri = configure_online_signer()
+        key = _load_public()
+        uri = _configure_online_signer()
         key.unrecognized_fields[ONLINE_KEY_URI_FIELD] = uri
         # TODO: remove old online key first
         root.keys[key.keyid] = key
@@ -107,12 +107,12 @@ def configure_online_key(root):
             break
 
 
-def configure_offline_keys(root):
+def _configure_offline_keys(root):
     console.print("Offline keys")
     while True:
         # TODO: add, remove, done, show stat
         console.print("Add")
-        key = load_public()
+        key = _load_public()
         root.add_key(key, Root.type)
 
         pprint(root.to_dict())
@@ -120,7 +120,7 @@ def configure_offline_keys(root):
             break
 
 
-def sign_root(root, previous_root=None):
+def _sign_root(root, previous_root=None):
     metadata = Metadata(root)
     console.print("Sign root metadata")
 
@@ -132,7 +132,7 @@ def sign_root(root, previous_root=None):
         console.print(f"Sign with key {keyid}")
         # TODO: yes, no, done, show stat
         key = root.get_key(keyid)
-        signer = load_signer(key)
+        signer = _load_signer(key)
         metadata.sign(signer, append=True)
 
         pprint(metadata.to_dict())
@@ -144,7 +144,7 @@ def sign_root(root, previous_root=None):
     return metadata
 
 
-def load_root() -> Metadata[Root]:
+def _load_root() -> Metadata[Root]:
     path = Prompt.ask("Enter path to root metadata")
     metadata = Metadata[Root].from_file(path)
     return metadata
@@ -160,27 +160,27 @@ def ceremony() -> None:
     """POC: Key-only Metadata Ceremony."""
     console.print("Ceremony")
     root = Root()
-    configure_online_key(root)
-    configure_offline_keys(root)
-    metadata = sign_root(root)
+    _configure_online_key(root)
+    _configure_offline_keys(root)
+    metadata = _sign_root(root)
 
 
 @admin2.command()  # type: ignore
 def update() -> None:
     """POC: Key-only Root Metadata Update."""
     console.print("Update")
-    previous_root_metadata = load_root()
+    previous_root_metadata = _load_root()
     root = deepcopy(previous_root_metadata.signed)
 
-    configure_online_key(root)
-    configure_offline_keys(root)
-    metadata = sign_root(root, previous_root_metadata.signed)
+    _configure_online_key(root)
+    _configure_offline_keys(root)
+    metadata = _sign_root(root, previous_root_metadata.signed)
 
 
 @admin2.command()  # type: ignore
 def sign() -> None:
     """POC: Sign Root Metadata."""
     console.print("Sign")
-    previous_root_metadata = load_root()
+    previous_root_metadata = _load_root()
     root = deepcopy(previous_root_metadata.signed)
-    metadata = sign_root(root, previous_root_metadata.signed)
+    metadata = _sign_root(root, previous_root_metadata.signed)
