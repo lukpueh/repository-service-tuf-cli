@@ -28,8 +28,10 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from rich.pretty import pprint
 from rich.prompt import Confirm, Prompt
+from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
+from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf.cli import console, rstuf
 
@@ -46,13 +48,18 @@ def _load_public() -> Key:
     # consider configuring signer based on that choice. Note that for online and
     # offline signing, different choices might be interesting.
 
-    # TODO: clarify supported key types, format
-    path = Prompt.ask("Enter public key path")
-    with open(path, "rb") as f:
-        public_pem = f.read()
+    while True:
+        # TODO: clarify supported key types, format
+        path = Prompt.ask("Enter public key path")
+        try:
+            with open(path, "rb") as f:
+                public_pem = f.read()
 
-    crypto = load_pem_public_key(public_pem)
-    key = SSlibKey.from_crypto(crypto)
+            crypto = load_pem_public_key(public_pem)
+            key = SSlibKey.from_crypto(crypto)
+            break
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load public key: {e}\n\tTry again!\n")
 
     # TODO: keyids can be anything. we could just ask for a custom keyid
     # instead of a label.
@@ -79,14 +86,20 @@ def _load_signer(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
     # TODO: Give choice -> hsm, sigstore, ...
 
-    # TODO: clarify supported key types, format
-    path = Prompt.ask("Enter path to encrypted local private key")
-    with open(path, "rb") as f:
-        private_pem = f.read()
+    while True:
+        # TODO: clarify supported key types, format
+        path = Prompt.ask("Enter path to encrypted local private key")
 
-    password = Prompt.ask("Enter password", password=True)
-    private_key = load_pem_private_key(private_pem, password.encode())
-    signer = CryptoSigner(private_key, public_key)
+        try:
+            with open(path, "rb") as f:
+                private_pem = f.read()
+
+            password = Prompt.ask("Enter password", password=True)
+            private_key = load_pem_private_key(private_pem, password.encode())
+            signer = CryptoSigner(private_key, public_key)
+            break
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load private key: {e}\n\tTry again!\n")
 
     return signer
 
@@ -133,11 +146,16 @@ def _sign_root(root: Root, previous_root: Optional[Root] = None) -> Metadata:
         # TODO: yes, no, done, show stat
         key = root.get_key(keyid)
         signer = _load_signer(key)
-        metadata.sign(signer, append=True)
+        try:
+            metadata.sign(signer, append=True)
+        # TODO: catch specific exception, based on supported signer impl
+        except Exception as e:
+            console.print(f"Cannot sign root metadata: {e}\n\tTry again!\n")
 
         pprint(metadata.to_dict())
 
         # TODO: check threshold (note special case root v1)
+        # TODO: only ask if no more keys are left to sign with
         if Confirm.ask("Done?"):
             break
 
@@ -145,8 +163,15 @@ def _sign_root(root: Root, previous_root: Optional[Root] = None) -> Metadata:
 
 
 def _load_root() -> Metadata[Root]:
-    path = Prompt.ask("Enter path to root metadata")
-    metadata = Metadata[Root].from_file(path)
+    while True:
+        path = Prompt.ask("Enter path to root metadata")
+        try:
+            metadata = Metadata[Root].from_file(path)
+            break
+
+        except (StorageError, DeserializationError) as e:
+            console.print(f"Cannot load root metadata: {e}\n\tTry again!\n")
+
     return metadata
 
 
