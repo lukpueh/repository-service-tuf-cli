@@ -13,7 +13,6 @@ Goals
 
 TODO
 ----
-- Make re-usable for `ceremony`, `metadata update` and `metadata sign`.
 - polish enough so that reviewers can try it out:
     - handle errors from inputs
     - clarify and beautify outputs
@@ -175,4 +174,13 @@ def update() -> None:
 
     configure_online_key(root)
     configure_offline_keys(root)
+    metadata = sign_root(root, previous_root_metadata.signed)
+
+
+@admin2.command()  # type: ignore
+def sign() -> None:
+    """POC: Sign Root Metadata."""
+    console.print("Sign")
+    previous_root_metadata = load_root()
+    root = deepcopy(previous_root_metadata.signed)
     metadata = sign_root(root, previous_root_metadata.signed)
