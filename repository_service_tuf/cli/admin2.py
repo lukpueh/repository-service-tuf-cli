@@ -21,6 +21,8 @@ TODO
 
 """
 
+from copy import deepcopy
+
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
@@ -96,6 +98,7 @@ def configure_online_key(root):
         key = load_public()
         uri = configure_online_signer()
         key.unrecognized_fields[ONLINE_KEY_URI_FIELD] = uri
+        # TODO: remove old online key first
         root.keys[key.keyid] = key
         for name in ONLINE_ROLE_NAMES:
             root.roles[name].keyids = [key.keyid]
@@ -118,10 +121,15 @@ def configure_offline_keys(root):
             break
 
 
-def sign_root(root):
+def sign_root(root, previous_root=None):
     metadata = Metadata(root)
-    console.print("Sign metadata")
-    for keyid in root.roles[Root.type].keyids:
+    console.print("Sign root metadata")
+
+    keyids = set(root.roles[Root.type].keyids)
+    if previous_root:
+        keyids |= set(previous_root.roles[Root.type].keyids)
+
+    for keyid in keyids:
         console.print(f"Sign with key {keyid}")
         # TODO: yes, no, done, show stat
         key = root.get_key(keyid)
@@ -129,9 +137,17 @@ def sign_root(root):
         metadata.sign(signer, append=True)
 
         pprint(metadata.to_dict())
+
+        # TODO: check threshold (note special case root v1)
         if Confirm.ask("Done?"):
             break
 
+    return metadata
+
+
+def load_root() -> Metadata[Root]:
+    path = Prompt.ask("Enter path to root metadata")
+    metadata = Metadata[Root].from_file(path)
     return metadata
 
 
@@ -148,3 +164,15 @@ def ceremony() -> None:
     configure_online_key(root)
     configure_offline_keys(root)
     metadata = sign_root(root)
+
+
+@admin2.command()  # type: ignore
+def update() -> None:
+    """POC: Key-only Root Metadata Update."""
+    console.print("Update")
+    previous_root_metadata = load_root()
+    root = deepcopy(previous_root_metadata.signed)
+
+    configure_online_key(root)
+    configure_offline_keys(root)
+    metadata = sign_root(root, previous_root_metadata.signed)
