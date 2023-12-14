@@ -1,5 +1,3 @@
-from typing import Any
-
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
@@ -9,7 +7,7 @@ from rich.prompt import Confirm, Prompt
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
 
-from repository_service_tuf.cli import click, console
+from repository_service_tuf.cli import console
 from repository_service_tuf.cli.admin import admin
 
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
@@ -71,8 +69,7 @@ def load_signer(public_key) -> Signer:
 
 
 @admin.command()  # type: ignore
-@click.pass_context
-def ceremony2(context: Any) -> None:
+def ceremony2() -> None:
     """POC: Key-only Metadata Ceremony.
 
     This implements the key loading and signing parts of the ceremony command
