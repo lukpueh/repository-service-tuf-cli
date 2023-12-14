@@ -211,6 +211,8 @@ def update() -> None:
 @admin2.command()  # type: ignore
 def sign() -> None:
     """POC: Sign Root Metadata."""
+    # FIXME: existing signatures are discarded. must be able to append.
+
     console.print("Sign")
     previous_root_metadata = _load_root()
     root = deepcopy(previous_root_metadata.signed)
