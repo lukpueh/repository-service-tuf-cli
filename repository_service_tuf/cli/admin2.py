@@ -189,6 +189,9 @@ def ceremony() -> None:
     _configure_offline_keys(root)
     metadata = _sign_root(root)
 
+    # TODO: make this configurable
+    metadata.to_file("root.json")
+
 
 @admin2.command()  # type: ignore
 def update() -> None:
@@ -201,6 +204,9 @@ def update() -> None:
     _configure_offline_keys(root)
     metadata = _sign_root(root, previous_root_metadata.signed)
 
+    # TODO: make this configurable
+    metadata.to_file("root.json")
+
 
 @admin2.command()  # type: ignore
 def sign() -> None:
@@ -209,3 +215,6 @@ def sign() -> None:
     previous_root_metadata = _load_root()
     root = deepcopy(previous_root_metadata.signed)
     metadata = _sign_root(root, previous_root_metadata.signed)
+
+    # TODO: make this configurable
+    metadata.to_file("root.json")
