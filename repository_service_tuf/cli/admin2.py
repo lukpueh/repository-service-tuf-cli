@@ -133,18 +133,17 @@ def _configure_offline_keys(root: Root) -> None:
             break
 
 
-def _sign_root(root: Root, previous_root: Optional[Root] = None) -> Metadata:
-    metadata = Metadata(root)
+def _sign_root(metadata: Metadata[Root], previous_root: Optional[Root] = None):
     console.print("Sign root metadata")
 
-    keyids = set(root.roles[Root.type].keyids)
+    keyids = set(metadata.signed.roles[Root.type].keyids)
     if previous_root:
         keyids |= set(previous_root.roles[Root.type].keyids)
 
     for keyid in keyids:
         console.print(f"Sign with key {keyid}")
         # TODO: yes, no, done, show stat
-        key = root.get_key(keyid)
+        key = metadata.signed.get_key(keyid)
         signer = _load_signer(key)
         try:
             metadata.sign(signer, append=True)
@@ -158,8 +157,6 @@ def _sign_root(root: Root, previous_root: Optional[Root] = None) -> Metadata:
         # TODO: only ask if no more keys are left to sign with
         if Confirm.ask("Done?"):
             break
-
-    return metadata
 
 
 def _load_root() -> Metadata[Root]:
@@ -187,10 +184,11 @@ def ceremony() -> None:
     root = Root()
     _configure_online_key(root)
     _configure_offline_keys(root)
-    metadata = _sign_root(root)
+    root_md = Metadata(root)
+    _sign_root(root_md)
 
     # TODO: make this configurable
-    metadata.to_file("root.json")
+    root_md.to_file("root.json")
 
 
 @admin2.command()  # type: ignore
@@ -202,21 +200,22 @@ def update() -> None:
 
     _configure_online_key(root)
     _configure_offline_keys(root)
-    metadata = _sign_root(root, previous_root_metadata.signed)
+
+    root_md = Metadata(root)
+    _sign_root(root_md, previous_root_metadata.signed)
 
     # TODO: make this configurable
-    metadata.to_file("root.json")
+    root_md.to_file("root.json")
 
 
 @admin2.command()  # type: ignore
 def sign() -> None:
     """POC: Sign Root Metadata."""
-    # FIXME: existing signatures are discarded. must be able to append.
     # TODO: allow passing previous root, to sign with old keys
 
     console.print("Sign")
-    root = _load_root()
-    metadata = _sign_root(root.signed)
+    root_md = _load_root()
+    _sign_root(root_md)
 
     # TODO: make this configurable
-    metadata.to_file("root.json")
+    root_md.to_file("root.json")
