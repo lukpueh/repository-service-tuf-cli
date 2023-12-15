@@ -141,7 +141,9 @@ def _sign_root(metadata: Metadata[Root], previous_root: Optional[Root] = None):
         keyids |= set(previous_root.roles[Root.type].keyids)
 
     for keyid in keyids:
-        console.print(f"Sign with key {keyid}")
+        if not Confirm.ask(f"Sign with key {keyid}?"):
+            continue
+
         # TODO: yes, no, done, show stat
         key = metadata.signed.get_key(keyid)
         signer = _load_signer(key)
@@ -155,8 +157,6 @@ def _sign_root(metadata: Metadata[Root], previous_root: Optional[Root] = None):
 
         # TODO: check threshold (note special case root v1)
         # TODO: only ask if no more keys are left to sign with
-        if Confirm.ask("Done?"):
-            break
 
 
 def _load_root() -> Metadata[Root]:
