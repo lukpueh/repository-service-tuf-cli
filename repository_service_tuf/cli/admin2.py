@@ -212,11 +212,11 @@ def update() -> None:
 def sign() -> None:
     """POC: Sign Root Metadata."""
     # FIXME: existing signatures are discarded. must be able to append.
+    # TODO: allow passing previous root, to sign with old keys
 
     console.print("Sign")
-    previous_root_metadata = _load_root()
-    root = deepcopy(previous_root_metadata.signed)
-    metadata = _sign_root(root, previous_root_metadata.signed)
+    root = _load_root()
+    metadata = _sign_root(root.signed)
 
     # TODO: make this configurable
     metadata.to_file("root.json")
