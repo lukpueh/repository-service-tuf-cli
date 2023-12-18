@@ -210,7 +210,34 @@ def update() -> None:
 
 @admin2.command()  # type: ignore
 def sign() -> None:
-    """POC: Sign Root Metadata."""
+    """POC: Sign Root Metadata.
+
+    Workflow
+    ========
+    * Load root
+    # TODO: currently from local file, later from web API
+    Prompt: Enter path to root
+
+    * If not first root: load previous root
+    Prompt: Enter path to previous root
+
+    * Show root
+    Review root
+
+    * Show signature status, e.g.
+    Root needs 1 signatures from any of (key1, key2)
+    Root needs 2 signatures from any of (key2, key3)
+
+    * Pick a key to sign from eligible keys [or next]
+    Load key from file
+
+    ... repeat (until done or users quits)
+
+
+    * Save root
+    # TODO: currently local file, later upload
+
+    """
     # TODO: allow passing previous root, to sign with old keys
 
     console.print("Sign")
