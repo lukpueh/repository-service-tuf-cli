@@ -20,7 +20,7 @@ TODO
 
 """
 from copy import deepcopy
-from typing import Optional
+from typing import Optional, Tuple
 
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
@@ -30,7 +30,7 @@ from rich.pretty import pprint
 from rich.prompt import Confirm, Prompt
 from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
-from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp
+from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp, UnsignedMetadataError
 from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf.cli import console, rstuf
@@ -86,22 +86,16 @@ def _load_signer(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
     # TODO: Give choice -> hsm, sigstore, ...
 
-    while True:
-        # TODO: clarify supported key types, format
-        path = Prompt.ask("Enter path to encrypted local private key")
+    # TODO: clarify supported key types, format
+    path = Prompt.ask("Enter path to encrypted local private key")
 
-        try:
-            with open(path, "rb") as f:
-                private_pem = f.read()
 
-            password = Prompt.ask("Enter password", password=True)
-            private_key = load_pem_private_key(private_pem, password.encode())
-            signer = CryptoSigner(private_key, public_key)
-            break
-        except (OSError, ValueError) as e:
-            console.print(f"Cannot load private key: {e}\n\tTry again!\n")
+    with open(path, "rb") as f:
+        private_pem = f.read()
 
-    return signer
+    password = Prompt.ask("Enter password", password=True)
+    private_key = load_pem_private_key(private_pem, password.encode())
+    return  CryptoSigner(private_key, public_key)
 
 
 def _configure_online_key(root: Root) -> None:
@@ -132,44 +126,87 @@ def _configure_offline_keys(root: Root) -> None:
         if Confirm.ask("Done?"):
             break
 
+def _verify(metadata: Metadata[Root], prev_root: Optional[Root]) -> Tuple[bool, set, str]:
+    """Verify signatures, optionally using previous root.
 
-def _sign_root(metadata: Metadata[Root], previous_root: Optional[Root] = None):
-    console.print("Sign root metadata")
+    Returns combined ('verified', 'unsigned', 'message')  """
+    # FIXME: de-duplicate code
+    # TODO: make output nicer/smarter?
+    result = metadata.signed.get_verification_result(Root.type, metadata.signed_bytes, metadata.signatures)
+    msg = []
+    if not result.verified:
+        missing = metadata.signed.roles[Root.type].threshold - len(result.signed)
+        msg.append(f"need {missing} signature(s) from any of {result.unsigned}")
 
-    keyids = set(metadata.signed.roles[Root.type].keyids)
-    if previous_root:
-        keyids |= set(previous_root.roles[Root.type].keyids)
+    if prev_root:
+        prev_result = prev_root.get_verification_result(Root.type, metadata.signed_bytes, metadata.signatures)
+        if not prev_result.verified:
+            prev_missing = prev_root.roles[Root.type].threshold - len(prev_result.signed)
+            msg.append(f"need {prev_missing} signature(s) from any of {prev_result.unsigned}")
 
-    for keyid in keyids:
-        if not Confirm.ask(f"Sign with key {keyid}?"):
-            continue
+        result = result.union(prev_result)
 
-        # TODO: yes, no, done, show stat
-        key = metadata.signed.get_key(keyid)
-        signer = _load_signer(key)
-        try:
-            metadata.sign(signer, append=True)
-        # TODO: catch specific exception, based on supported signer impl
-        except Exception as e:
-            console.print(f"Cannot sign root metadata: {e}\n\tTry again!\n")
-
-        pprint(metadata.to_dict())
-
-        # TODO: check threshold (note special case root v1)
-        # TODO: only ask if no more keys are left to sign with
+    return result.verified, result.unsigned, "\n".join(msg)
 
 
-def _load_root() -> Metadata[Root]:
+def _get_key(keyid: str, root: Root, prev_root: Optional[Root]) -> str:
+    # only fails if metadata is invalid
+    # TODO: Fix upstream: `get_verification_result` should return `Key`s
+    return root.keys.get(keyid) or prev_root.keys[keyid]
+
+
+def _sign_root(metadata: Metadata[Root], prev_root: Optional[Root] = None, should_review=True):
+    """
+    """
     while True:
-        path = Prompt.ask("Enter path to root metadata")
+        verified, unsigned, status_msg = _verify(metadata, prev_root)
+        if verified:
+            console.print("Fully signed.")
+            return
+
+        console.print(status_msg)
+
+        while True:
+            if should_review and Confirm.ask("Review?"):
+                _show_root(metadata.signed)
+                should_review = False
+
+            if not Confirm.ask("Sign?"):
+                return
+
+            keyid = Prompt.ask("Choose key", choices=list(unsigned))
+            key = _get_key(keyid, metadata.signed, prev_root)
+            try:
+                signer = _load_signer(key)
+                metadata.sign(signer, append=True)
+                break
+
+            except (ValueError, OSError, UnsignedMetadataError) as e:
+                console.print(f"Cannot sign: {e}")
+
+
+def _load_root(msg: str) -> Metadata[Root]:
+    while True:
+        path = Prompt.ask(msg)
         try:
             metadata = Metadata[Root].from_file(path)
             break
 
         except (StorageError, DeserializationError) as e:
-            console.print(f"Cannot load root metadata: {e}\n\tTry again!\n")
+            console.print(f"Cannot load metadata: {e}\n\tTry again!\n")
 
     return metadata
+
+def _show_root(root: Root):
+    pprint(root.to_dict())
+
+def _save_root(metadata: Metadata[Root]):
+    # TODO: Make name and location configurable, allow upload
+    fn = "root.json"
+    console.print(f"Saving root metadata to '{fn}'...")
+
+    from tuf.api.serialization.json import JSONSerializer
+    metadata.to_file(fn, JSONSerializer(compact=False))
 
 
 @rstuf.group()  # type: ignore
@@ -195,7 +232,7 @@ def ceremony() -> None:
 def update() -> None:
     """POC: Key-only Root Metadata Update."""
     console.print("Update")
-    previous_root_metadata = _load_root()
+    previous_root_metadata = _load_root("Enter path to root to update")
     root = deepcopy(previous_root_metadata.signed)
 
     _configure_online_key(root)
@@ -211,38 +248,19 @@ def update() -> None:
 @admin2.command()  # type: ignore
 def sign() -> None:
     """POC: Sign Root Metadata.
-
-    Workflow
-    ========
-    * Load root
-    # TODO: currently from local file, later from web API
-    Prompt: Enter path to root
-
-    * If not first root: load previous root
-    Prompt: Enter path to previous root
-
-    * Show root
-    Review root
-
-    * Show signature status, e.g.
-    Root needs 1 signatures from any of (key1, key2)
-    Root needs 2 signatures from any of (key2, key3)
-
-    * Pick a key to sign from eligible keys [or next]
-    Load key from file
-
-    ... repeat (until done or users quits)
-
-
-    * Save root
-    # TODO: currently local file, later upload
-
     """
-    # TODO: allow passing previous root, to sign with old keys
+    root_md = _load_root("Enter path to root to sign")
+    prev_root = None
+    if root_md.signed.version > 1:
+        prev_root_md = _load_root("Enter path to previous root")
+        prev_root = prev_root_md.signed
 
-    console.print("Sign")
-    root_md = _load_root()
-    _sign_root(root_md)
+    orig_sigs = deepcopy(root_md.signatures)
+    _sign_root(root_md, prev_root)
 
-    # TODO: make this configurable
-    root_md.to_file("root.json")
+    if root_md.signatures != orig_sigs:
+        _save_root(root_md)
+    else:
+        console.print("Not saving unchanged metadata.")
+
+    console.print("Bye.")
