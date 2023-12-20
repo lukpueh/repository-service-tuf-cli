@@ -201,13 +201,20 @@ def _show_root(root: Root):
     pprint(root.to_dict())
 
 def _save_root(metadata: Metadata[Root]):
-    # TODO: Make name and location configurable, allow upload
-    fn = "root.json"
-    console.print(f"Saving root metadata to '{fn}'...")
+    while True:
+        if not Confirm.ask("Save?"):
+            return
 
-    from tuf.api.serialization.json import JSONSerializer
-    metadata.to_file(fn, JSONSerializer(compact=False))
+        path = Prompt.ask("Enter path to save root", default="root.json")
+        try:
+            # TODO: switch back to default serializer when done with debugging
+            from tuf.api.serialization.json import JSONSerializer
+            metadata.to_file(path, JSONSerializer(compact=False))
+            console.print(f"Saved to '{path}'...")
+            break
 
+        except StorageError as e:
+            console.print(f"Cannot save: {e}")
 
 @rstuf.group()  # type: ignore
 def admin2():
