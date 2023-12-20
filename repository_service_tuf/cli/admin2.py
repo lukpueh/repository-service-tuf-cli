@@ -20,7 +20,7 @@ TODO
 
 """
 from copy import deepcopy
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
@@ -30,7 +30,14 @@ from rich.pretty import pprint
 from rich.prompt import Confirm, Prompt
 from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
-from tuf.api.metadata import Metadata, Root, Snapshot, Targets, Timestamp, UnsignedMetadataError
+from tuf.api.metadata import (
+    Metadata,
+    Root,
+    Snapshot,
+    Targets,
+    Timestamp,
+    UnsignedMetadataError,
+)
 from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf.cli import console, rstuf
@@ -89,13 +96,12 @@ def _load_signer(public_key: Key) -> Signer:
     # TODO: clarify supported key types, format
     path = Prompt.ask("Enter path to encrypted local private key")
 
-
     with open(path, "rb") as f:
         private_pem = f.read()
 
     password = Prompt.ask("Enter password", password=True)
     private_key = load_pem_private_key(private_pem, password.encode())
-    return  CryptoSigner(private_key, public_key)
+    return CryptoSigner(private_key, public_key)
 
 
 def _configure_online_key(root: Root) -> None:
@@ -126,59 +132,65 @@ def _configure_offline_keys(root: Root) -> None:
         if Confirm.ask("Done?"):
             break
 
-def _verify(metadata: Metadata[Root], prev_root: Optional[Root]) -> Tuple[bool, set, str]:
-    """Verify signatures, optionally using previous root.
 
-    Returns combined ('verified', 'unsigned', 'message')  """
-    # FIXME: de-duplicate code
-    # TODO: make output nicer/smarter?
-    result = metadata.signed.get_verification_result(Root.type, metadata.signed_bytes, metadata.signatures)
-    msg = []
+def _get_verification_result(
+    delegator: Root, delegate: Metadata[Root]
+) -> Tuple[Dict[str, Key], str]:
+    result = delegator.get_verification_result(
+        Root.type, delegate.signed_bytes, delegate.signatures
+    )
+    msg = ""
     if not result.verified:
-        missing = metadata.signed.roles[Root.type].threshold - len(result.signed)
-        msg.append(f"need {missing} signature(s) from any of {result.unsigned}")
+        missing = delegator.roles[Root.type].threshold - len(result.signed)
+        msg = f"need {missing} signature(s) from any of {result.unsigned}"
 
-    if prev_root:
-        prev_result = prev_root.get_verification_result(Root.type, metadata.signed_bytes, metadata.signatures)
-        if not prev_result.verified:
-            prev_missing = prev_root.roles[Root.type].threshold - len(prev_result.signed)
-            msg.append(f"need {prev_missing} signature(s) from any of {prev_result.unsigned}")
+    unsigned = {keyid: delegator.get_key(keyid) for keyid in result.unsigned}
 
-        result = result.union(prev_result)
-
-    return result.verified, result.unsigned, "\n".join(msg)
+    return unsigned, msg
 
 
-def _get_key(keyid: str, root: Root, prev_root: Optional[Root]) -> str:
-    # only fails if metadata is invalid
-    # TODO: Fix upstream: `get_verification_result` should return `Key`s
-    return root.keys.get(keyid) or prev_root.keys[keyid]
-
-
-def _sign_root(metadata: Metadata[Root], prev_root: Optional[Root] = None, should_review=True):
-    """
-    """
+def _sign_root(
+    metadata: Metadata[Root],
+    prev_root: Optional[Root] = None,
+    should_review=True,
+):
+    """ """
     while True:
-        verified, unsigned, status_msg = _verify(metadata, prev_root)
-        if verified:
-            console.print("Fully signed.")
-            return
+        unsigned_keys, missing_sig_msg = _get_verification_result(
+            metadata.signed, metadata
+        )
+        if prev_root:
+            prev_keys, prev_msg = _get_verification_result(prev_root, metadata)
+            unsigned_keys.update(prev_keys)
 
-        console.print(status_msg)
+            # Combine "missing signatures" messages from old and new root:
+            # - show only non-empty message (filter)
+            # - show only one message if both are equal (set)
+            missing_sig_msg = "\n".join(
+                filter(None, {missing_sig_msg, prev_msg})
+            )
+
+        if missing_sig_msg:
+            console.print(missing_sig_msg)
+        else:
+            console.print("Metadata is fully signed.")
+            return
 
         while True:
             if should_review and Confirm.ask("Review?"):
                 _show_root(metadata.signed)
-                should_review = False
+
+            # Ask only once.
+            should_review = False
 
             if not Confirm.ask("Sign?"):
                 return
 
-            keyid = Prompt.ask("Choose key", choices=list(unsigned))
-            key = _get_key(keyid, metadata.signed, prev_root)
+            keyid = Prompt.ask("Choose key", choices=list(unsigned_keys))
             try:
-                signer = _load_signer(key)
+                signer = _load_signer(unsigned_keys[keyid])
                 metadata.sign(signer, append=True)
+                console.print(f"Signed with key {keyid}")
                 break
 
             except (ValueError, OSError, UnsignedMetadataError) as e:
@@ -197,8 +209,10 @@ def _load_root(msg: str) -> Metadata[Root]:
 
     return metadata
 
+
 def _show_root(root: Root):
     pprint(root.to_dict())
+
 
 def _save_root(metadata: Metadata[Root]):
     while True:
@@ -209,12 +223,14 @@ def _save_root(metadata: Metadata[Root]):
         try:
             # TODO: switch back to default serializer when done with debugging
             from tuf.api.serialization.json import JSONSerializer
+
             metadata.to_file(path, JSONSerializer(compact=False))
             console.print(f"Saved to '{path}'...")
             break
 
         except StorageError as e:
             console.print(f"Cannot save: {e}")
+
 
 @rstuf.group()  # type: ignore
 def admin2():
@@ -254,8 +270,7 @@ def update() -> None:
 
 @admin2.command()  # type: ignore
 def sign() -> None:
-    """POC: Sign Root Metadata.
-    """
+    """POC: Sign Root Metadata."""
     root_md = _load_root("Enter path to root to sign")
     prev_root = None
     if root_md.signed.version > 1:
