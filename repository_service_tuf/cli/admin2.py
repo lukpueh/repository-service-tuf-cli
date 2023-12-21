@@ -178,7 +178,7 @@ def _sign_root(
 
         while True:
             if should_review and Confirm.ask("Review?"):
-                _show_root(metadata.signed)
+                _show(metadata.signed)
 
             # Ask only once.
             should_review = False
@@ -197,34 +197,40 @@ def _sign_root(
                 console.print(f"Cannot sign: {e}")
 
 
-def _load_root(msg: str) -> Metadata[Root]:
+def _load(prompt: str) -> Metadata[Root]:
+    """Prompt loop to load root metadata from file.
+
+    Loop until success or user exit.
+    """
     while True:
-        path = Prompt.ask(msg)
+        path = Prompt.ask(prompt)
         try:
             metadata = Metadata[Root].from_file(path)
             break
 
         except (StorageError, DeserializationError) as e:
-            console.print(f"Cannot load metadata: {e}\n\tTry again!\n")
+            console.print(f"Cannot load: {e}")
 
     return metadata
 
 
-def _show_root(root: Root):
+def _show(root: Root):
+    """Pretty print root metadata."""
     pprint(root.to_dict())
 
 
-def _save_root(metadata: Metadata[Root]):
+def _save(metadata: Metadata[Root]):
+    """Prompt loop to save root metadata to file.
+
+    Loop until success or user exit.
+    """
     while True:
         if not Confirm.ask("Save?"):
             return
 
         path = Prompt.ask("Enter path to save root", default="root.json")
         try:
-            # TODO: switch back to default serializer when done with debugging
-            from tuf.api.serialization.json import JSONSerializer
-
-            metadata.to_file(path, JSONSerializer(compact=False))
+            metadata.to_file(path)
             console.print(f"Saved to '{path}'...")
             break
 
@@ -255,7 +261,7 @@ def ceremony() -> None:
 def update() -> None:
     """POC: Key-only Root Metadata Update."""
     console.print("Update")
-    previous_root_metadata = _load_root("Enter path to root to update")
+    previous_root_metadata = _load("Enter path to root to update")
     root = deepcopy(previous_root_metadata.signed)
 
     _configure_online_key(root)
@@ -270,18 +276,24 @@ def update() -> None:
 
 @admin2.command()  # type: ignore
 def sign() -> None:
-    """POC: Sign Root Metadata."""
-    root_md = _load_root("Enter path to root to sign")
+    """Add signatures to root metadata.
+
+    Will ask for root metadata and signing key paths.
+    """
+    # 1. Load
+    root_md = _load("Enter path to root to sign")
     prev_root = None
     if root_md.signed.version > 1:
-        prev_root_md = _load_root("Enter path to previous root")
+        prev_root_md = _load("Enter path to previous root")
         prev_root = prev_root_md.signed
 
+    # 2. Add missing signatures
     orig_sigs = deepcopy(root_md.signatures)
     _sign_root(root_md, prev_root)
 
+    # 3. Save
     if root_md.signatures != orig_sigs:
-        _save_root(root_md)
+        _save(root_md)
     else:
         console.print("Not saving unchanged metadata.")
 
