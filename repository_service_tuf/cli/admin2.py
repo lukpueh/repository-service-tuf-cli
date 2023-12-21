@@ -1,21 +1,19 @@
-"""POC: alternative admin cli
+"""Alternative admin cli
 
-Re-implement key loading and signing in admin cli subcommands.
+Provides alternative ceremony, metadata update, and sign admin cli commands.
 
 Goals
 -----
-- configure online signer location via uri attached to public key
- (for repository-service-tuf/repository-service-tuf-worker#427)
 - use state-of-the-art securesystemslib Signer API only
-- make re-usable for similar cli
-- simplify (e.g. avoid custom/redundant abstractions over
-    python-tuf/securesystemslib Metadata API)
+- simplify (e.g. avoid custom/redundant abstractions over Metadata API)
+- configure online signer location via uri attached to public key
+  (for repository-service-tuf/repository-service-tuf-worker#427)
 
 TODO
 ----
-- polish enough so that reviewers can try it out:
-    - handle errors from inputs
-    - clarify and beautify outputs
+- implement ceremony
+- implement update
+- polish enough so that reviewers can try it out
 - Integrate with existing admin cli
 
 """
