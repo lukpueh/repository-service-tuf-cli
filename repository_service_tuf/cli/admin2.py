@@ -20,11 +20,14 @@ TODO
 from copy import deepcopy
 from typing import Dict, Optional, Tuple
 
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key,
+    load_pem_public_key,
+)
 from rich.pretty import pprint
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm, IntPrompt, Prompt
 from securesystemslib.exceptions import StorageError
-from securesystemslib.signer import CryptoSigner, Key, Signer
+from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import (
     Metadata,
     Root,
@@ -36,6 +39,120 @@ from tuf.api.metadata import (
 from tuf.api.serialization import DeserializationError
 
 from repository_service_tuf.cli import console, rstuf
+
+ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
+
+
+def _load_public_key() -> Key:
+    """Ask for details to load public key, load and return."""
+    # TODO: Give choice -- data (copy paste), hsm, aws, sigstore, ... -- and
+    # consider configuring signer based on that choice. Note that for online
+    # and offline signing, different choices might be interesting.
+
+    # TODO: clarify supported key types, format
+    path = Prompt.ask("Please enter a public key path")
+    with open(path, "rb") as f:
+        public_pem = f.read()
+
+    crypto = load_pem_public_key(public_pem)
+    return SSlibKey.from_crypto(crypto)
+
+
+def _configure_root_keys(root: Root) -> None:
+    """Prompt series with loop to add/remove root keys, and enter threshold.
+
+    Loops until user exit (at least one root key must be set).
+
+    """
+    console.print("Root Key Configuration")
+
+    # Get current keys
+    root_role = root.get_delegated_role(Root.type)
+    # TODO: _show_root_key()
+
+    # Remove or add root keys
+    while True:
+        if not root_role.keyids:
+            console.print("At least one root key is required.")
+            choice = 1  # Add key
+
+        else:
+            choice = IntPrompt.ask(
+                "Please press (1) to add a root key, "
+                "or (2) to remove a root key, "
+                "or press enter to continue",
+                choices=["1", "2"],
+                default=0,
+                show_choices=False,
+                show_default=False,
+            )
+
+        if choice == 0:
+            break
+
+        elif choice == 1:
+            try:
+                new_key = _load_public_key()
+            except (OSError, ValueError) as e:
+                console.print(f"Cannot load: {e}")
+            else:
+                # TODO: Configure key label or custom keyid to make the key
+                # indentifiable
+                root.add_key(new_key, Root.type)
+
+                # TODO: consider case handling new_key == current_key
+                console.print(f"Added root key '{new_key.keyid}'")
+
+        elif choice == 2:
+            keyid = Prompt.ask(
+                "Choose key to remove", choices=sorted(root_role.keyids)
+            )
+            root.revoke_key(keyid, Root.type)
+            console.print(f"Removed root key '{keyid}'")
+
+    # TODO: Prompt Threshold:
+    # min: 1, max: len root keys, default: previous (unless bootstrap)
+
+
+def _configure_online_key(root: Root) -> None:
+    """Prompt loop to change online key.
+
+    Loops until success or user exit.
+    """
+    console.print("Online Key Configuration")
+    # TODO: _show_online_key()
+
+    while True:
+        # Get current key
+        # TODO: assert all online roles have same/single keyid
+        # TODO: handle inconsistency -> fail
+        # TODO: handle missing online key -> fail in update (unless bootstrap)
+        ts_role = root.get_delegated_role(Timestamp.type)
+        current_key = root.get_key(ts_role.keyids[0])
+
+        # Allow user to skip online key change
+        if not Confirm.ask("Do you want to change the online key?"):
+            break
+
+        # Load new key
+        try:
+            new_key = _load_public_key()
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load: {e}")
+            continue
+
+        # TODO: Configure key label or custom keyid to make key indentifiable
+        # TODO: Configure signer URI
+
+        # TODO: consider case handling new_key == current_key
+
+        # Remove current and add new key
+        for role_name in ONLINE_ROLE_NAMES:
+            root.revoke_key(current_key.keyid, role_name)
+            root.add_key(new_key, role_name)
+
+        console.print(f"Configured online key: '{new_key.keyid}'")
+        break
 
 
 def _load_signer(public_key: Key) -> Signer:
@@ -189,6 +306,40 @@ def _save(metadata: Metadata[Root]):
 @rstuf.group()  # type: ignore
 def admin2():
     """POC: alternative admin interface"""
+
+
+@admin2.command()  # type: ignore
+def update() -> None:
+    """Update root metadata.
+
+    Will ask for root metadata and signing key paths.
+    """
+    # 1. Load
+    current_root_md = _load("Enter path to root to update")
+    new_root = deepcopy(current_root_md.signed)
+
+    # 2. Configure online key
+    _configure_online_key(new_root)
+
+    # 3. Configure root key
+    _configure_root_keys(new_root)
+
+    if new_root == current_root_md.signed:
+        console.print("Not saving unchanged metadata.")
+
+    else:
+        # 4. Bump version
+        # TODO: should we always bump?
+        new_root.version += 1
+
+        # 5. Sign
+        new_root_md = Metadata(new_root)
+        _sign(new_root_md, current_root_md.signed)
+
+        # 6. Save
+        _save(new_root_md)
+
+    console.print("Bye.")
 
 
 @admin2.command()  # type: ignore
