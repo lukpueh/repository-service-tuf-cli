@@ -42,6 +42,8 @@ from repository_service_tuf.cli import console, rstuf
 
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 
+# TODO: consider "x-rstuf-" prefix
+KEY_NAME_FIELD = "name"
 
 def _load_public_key() -> Key:
     """Ask for details to load public key, load and return."""
@@ -96,11 +98,24 @@ def _configure_root_keys(root: Root) -> None:
             except (OSError, ValueError) as e:
                 console.print(f"Cannot load: {e}")
             else:
-                # TODO: Configure key label or custom keyid to make the key
-                # indentifiable
-                root.add_key(new_key, Root.type)
+                # TODO: clarify what the name is needed/used for
+                # TODO: assert unique?
+                name = Prompt.ask(
+                    "Please enter a key name, "
+                    "or press enter to continue without name",
+                    show_default=False,
+                )
+                if name:
+                    new_key.unrecognized_fields[KEY_NAME_FIELD] = name
 
-                # TODO: consider case handling new_key == current_key
+                # TODO: handle cases, where key already exists:
+                #  * If the key is already a root key, `add_key` is a noop.
+                #  * If the key is already used as online key, the keyid is
+                #    added to root keyids, but the key object remains unchanged
+                #    in the metadata keystore, so the entered name is lost.
+                # Maybe we should disallow re-using root and online key, as they
+                # need different additional fields (name vs. uri)?
+                root.add_key(new_key, Root.type)
                 console.print(f"Added root key '{new_key.keyid}'")
 
         elif choice == 2:
