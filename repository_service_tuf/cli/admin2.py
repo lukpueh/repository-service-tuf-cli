@@ -17,6 +17,7 @@ TODO
 - Integrate with existing admin cli
 
 """
+import os
 from copy import deepcopy
 from typing import Dict, Optional, Tuple
 
@@ -42,11 +43,13 @@ from repository_service_tuf.cli import console, rstuf
 
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 
+KEY_URI_FIELD = "x-rstuf-online-key-uri"
 # TODO: consider "x-rstuf-" prefix
 KEY_NAME_FIELD = "name"
 
-def _load_public_key() -> Key:
-    """Ask for details to load public key, load and return."""
+
+def _load_public_key() -> Tuple[Key, str]:
+    """Ask for details to load public key, load and return key and uri."""
     # TODO: Give choice -- data (copy paste), hsm, aws, sigstore, ... -- and
     # consider configuring signer based on that choice. Note that for online
     # and offline signing, different choices might be interesting.
@@ -57,7 +60,14 @@ def _load_public_key() -> Key:
         public_pem = f.read()
 
     crypto = load_pem_public_key(public_pem)
-    return SSlibKey.from_crypto(crypto)
+
+    key = SSlibKey.from_crypto(crypto)
+
+    # for file based keys, we use a "relative file path uri"
+    # see repository-service-tuf/repository-service-tuf#580
+    uri = f"fn:{os.path.basename(path)}"
+
+    return key, uri
 
 
 def _configure_root_keys(root: Root) -> None:
@@ -94,7 +104,7 @@ def _configure_root_keys(root: Root) -> None:
 
         elif choice == 1:
             try:
-                new_key = _load_public_key()
+                new_key, _ = _load_public_key()
             except (OSError, ValueError) as e:
                 console.print(f"Cannot load: {e}")
             else:
@@ -151,19 +161,18 @@ def _configure_online_key(root: Root) -> None:
 
         # Load new key
         try:
-            new_key = _load_public_key()
+            new_key, uri = _load_public_key()
         except (OSError, ValueError) as e:
             console.print(f"Cannot load: {e}")
             continue
 
-        # TODO: Configure key label or custom keyid to make key indentifiable
-        # TODO: Configure signer URI
-
-        # TODO: consider case handling new_key == current_key
+        new_key.unrecognized_fields[KEY_URI_FIELD] = uri
 
         # Remove current and add new key
         for role_name in ONLINE_ROLE_NAMES:
             root.revoke_key(current_key.keyid, role_name)
+
+            # TODO: handle case where key already exists as root key; disallow?
             root.add_key(new_key, role_name)
 
         console.print(f"Configured online key: '{new_key.keyid}'")
