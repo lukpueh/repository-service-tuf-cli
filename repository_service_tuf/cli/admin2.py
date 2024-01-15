@@ -117,7 +117,7 @@ def _configure_root_keys(root: Root) -> None:
 def _configure_online_key(root: Root) -> None:
     """Prompt loop to change online key.
 
-    Loops until success or user exit.
+    Loops until user exit.
     """
     console.print("Online Key Configuration")
     # TODO: _show_online_key()
@@ -152,7 +152,6 @@ def _configure_online_key(root: Root) -> None:
             root.add_key(new_key, role_name)
 
         console.print(f"Configured online key: '{new_key.keyid}'")
-        break
 
 
 def _load_signer(public_key: Key) -> Signer:
