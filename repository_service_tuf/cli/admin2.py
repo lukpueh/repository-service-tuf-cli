@@ -135,8 +135,13 @@ def _configure_root_keys(root: Root) -> None:
             root.revoke_key(keyid, Root.type)
             console.print(f"Removed root key '{keyid}'")
 
-    # TODO: Prompt Threshold:
-    # min: 1, max: len root keys, default: previous (unless bootstrap)
+    default_threshold = min(root_role.threshold, len(root_role.keyids))
+    IntPrompt.ask(
+        "Please enter root signature threshold:",
+        choices=[str(i) for i in range(1, len(root_role.keyids) + 1)],
+        show_choices=False,
+        default=default_threshold,
+    )
 
 
 def _configure_online_key(root: Root) -> None:
