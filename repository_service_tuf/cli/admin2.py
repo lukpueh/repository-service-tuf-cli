@@ -19,6 +19,7 @@ TODO
 """
 import os
 from copy import deepcopy
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives.serialization import (
@@ -220,6 +221,32 @@ def _configure_online_key(root: Root) -> None:
         console.print(f"Configured online key: '{new_key.keyid}'")
 
 
+def _configure_expiry(root: Root) -> None:
+    """Prompt loop to configure root expiry.
+
+    Loops until user exit and metadata is not expired.
+    """
+    format_ = "%x"
+    console.print("Expiration Date Configuration")
+    # Locale's appropriate date representation.
+
+    while True:
+        if root.is_expired():
+            console.print(f"Root has expired on {root.expires:{format_}}")
+        else:
+            console.print(f"Root expires on {root.expires:{format_}}")
+            if not Confirm.ask("Do you want to change the expiry date?"):
+                break
+
+        days = _PositiveIntPrompt.ask(
+            "Please enter number of days by which to "
+            "extend the expiry date, starting today"
+        )
+
+        root.expires = datetime.utcnow() + timedelta(days=days)
+        console.print(f"Extended root expiry date by {days} days")
+
+
 def _load_signer(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
     # TODO: Give choice -> hsm, sigstore, ...
@@ -384,6 +411,7 @@ def update() -> None:
     new_root = deepcopy(current_root_md.signed)
 
     # Update
+    _configure_expiry(new_root)
     _configure_root_keys(new_root)
     _configure_online_key(new_root)
 
