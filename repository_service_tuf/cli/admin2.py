@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
 )
 from rich.pretty import pprint
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import Confirm, IntPrompt, InvalidResponse, Prompt
 from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import (
@@ -46,6 +46,18 @@ ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 KEY_URI_FIELD = "x-rstuf-online-key-uri"
 # TODO: consider "x-rstuf-" prefix
 KEY_NAME_FIELD = "name"
+
+
+class _PositiveIntPrompt(IntPrompt):
+    validate_error_message = (
+        "[prompt.invalid]Please enter a valid positive integer number"
+    )
+
+    def process_response(self, value: str) -> int:
+        return_value: int = super().process_response(value)
+        if return_value < 1:
+            raise InvalidResponse(self.validate_error_message)
+        return return_value
 
 
 def _load_public_key() -> Tuple[Key, str]:
@@ -70,6 +82,72 @@ def _load_public_key() -> Tuple[Key, str]:
     return key, uri
 
 
+def _add_root_keys(root: Root) -> None:
+    """Prompt loop to add root keys.
+
+    Loops until user exit and threshold is met."""
+
+    root_role = root.get_delegated_role(Root.type)
+
+    while True:
+        missing = root_role.threshold - len(root_role.keyids)
+        if missing > 0:
+            console.print(
+                f"Please add {missing} key(s) "
+                f"to meet threshold ({root_role.threshold})."
+            )
+        else:
+            if not Confirm.ask("Do you want to add a root key?"):
+                break
+
+        try:
+            new_key, _ = _load_public_key()
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load: {e}")
+            continue
+
+        # TODO: handle cases, where key already exists:
+        #  * If the key is already a root key, `add_key` is a noop.
+        #  * If the key is already used as online key, the keyid is
+        #    added to root keyids, but the key object remains unchanged
+        #    in the metadata keystore, so the entered name is lost.
+        # Maybe we should disallow re-using root and online key, as they
+        # need different additional fields (name vs. uri)?
+
+        # TODO: clarify what the name is needed/used for
+        # TODO: assert unique? make mandatory?
+        name = Prompt.ask(
+            "Please enter a key name, "
+            "or press enter to continue without name",
+            show_default=False,
+        )
+        if name:
+            new_key.unrecognized_fields[KEY_NAME_FIELD] = name
+
+        root.add_key(new_key, Root.type)
+        console.print(f"Added root key '{new_key.keyid}'")
+
+
+def _remove_root_keys(root: Root) -> None:
+    """Prompt loop to remove root keys.
+
+    Loops until no keys left or user exit. (threshold is ignored)"""
+    root_role = root.get_delegated_role(Root.type)
+
+    while True:
+        if not root_role.keyids:
+            break
+
+        if not Confirm.ask("Do you want to remove a root key?"):
+            break
+
+        keyid = Prompt.ask(
+            "Choose key to remove", choices=sorted(root_role.keyids)
+        )
+        root.revoke_key(keyid, Root.type)
+        console.print(f"Removed root key '{keyid}'")
+
+
 def _configure_root_keys(root: Root) -> None:
     """Prompt series with loop to add/remove root keys, and enter threshold.
 
@@ -82,66 +160,25 @@ def _configure_root_keys(root: Root) -> None:
     root_role = root.get_delegated_role(Root.type)
     # TODO: _show_root_key()
 
-    # Remove or add root keys
     while True:
-        if not root_role.keyids:
-            console.print("At least one root key is required.")
-            choice = 1  # Add key
-
-        else:
-            choice = IntPrompt.ask(
-                "Please press (1) to add a root key, "
-                "or (2) to remove a root key, "
-                "or press enter to continue",
-                choices=["1", "2"],
-                default=0,
-                show_choices=False,
-                show_default=False,
-            )
-
-        if choice == 0:
+        # Allow user to skip offline key change (assumes valid metadata)
+        if not Confirm.ask("Do you want to change root keys?"):
             break
 
-        elif choice == 1:
-            try:
-                new_key, _ = _load_public_key()
-            except (OSError, ValueError) as e:
-                console.print(f"Cannot load: {e}")
-            else:
-                # TODO: clarify what the name is needed/used for
-                # TODO: assert unique?
-                name = Prompt.ask(
-                    "Please enter a key name, "
-                    "or press enter to continue without name",
-                    show_default=False,
-                )
-                if name:
-                    new_key.unrecognized_fields[KEY_NAME_FIELD] = name
+        # TODO: Recommend setting threshold in the end. It's easier to set an
+        # unwanted threshold to meet key requirements, than to add new keys
+        # until the threshold is met.
+        # add/remove, than the other way around.
+        root_role.threshold = _PositiveIntPrompt.ask(
+            "Please enter root signature threshold",
+            default=root_role.threshold,
+        )
 
-                # TODO: handle cases, where key already exists:
-                #  * If the key is already a root key, `add_key` is a noop.
-                #  * If the key is already used as online key, the keyid is
-                #    added to root keyids, but the key object remains unchanged
-                #    in the metadata keystore, so the entered name is lost.
-                # Maybe we should disallow re-using root and online key, as they
-                # need different additional fields (name vs. uri)?
-                root.add_key(new_key, Root.type)
-                console.print(f"Added root key '{new_key.keyid}'")
+        # Allow removing keys, even if we drop below threshold.
+        _remove_root_keys(root)
 
-        elif choice == 2:
-            keyid = Prompt.ask(
-                "Choose key to remove", choices=sorted(root_role.keyids)
-            )
-            root.revoke_key(keyid, Root.type)
-            console.print(f"Removed root key '{keyid}'")
-
-    default_threshold = min(root_role.threshold, len(root_role.keyids))
-    IntPrompt.ask(
-        "Please enter root signature threshold:",
-        choices=[str(i) for i in range(1, len(root_role.keyids) + 1)],
-        show_choices=False,
-        default=default_threshold,
-    )
+        # Require enough keys to meet the threshold
+        _add_root_keys(root)
 
 
 def _configure_online_key(root: Root) -> None:
@@ -160,7 +197,7 @@ def _configure_online_key(root: Root) -> None:
         ts_role = root.get_delegated_role(Timestamp.type)
         current_key = root.get_key(ts_role.keyids[0])
 
-        # Allow user to skip online key change
+        # Allow user to skip online key change (assumes valid metadata)
         if not Confirm.ask("Do you want to change the online key?"):
             break
 
@@ -340,7 +377,7 @@ def admin2():
 def update() -> None:
     """Update root metadata.
 
-    Will ask for root metadata and signing key paths.
+    Will ask for root metadata, public key paths, and signing key paths.
     """
     # 1. Load
     current_root_md = _load("Enter path to root to update")
