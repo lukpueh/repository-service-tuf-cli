@@ -375,33 +375,25 @@ def admin2():
 
 @admin2.command()  # type: ignore
 def update() -> None:
-    """Update root metadata.
+    """Update root metadata and bump version.
 
     Will ask for root metadata, public key paths, and signing key paths.
     """
-    # 1. Load
+    # Load
     current_root_md = _load("Enter path to root to update")
     new_root = deepcopy(current_root_md.signed)
 
-    # 2. Configure online key
+    # Update
+    _configure_root_keys(new_root)
     _configure_online_key(new_root)
 
-    # 3. Configure root key
-    _configure_root_keys(new_root)
-
+    # Sign and save (if changed)
     if new_root == current_root_md.signed:
         console.print("Not saving unchanged metadata.")
-
     else:
-        # 4. Bump version
-        # TODO: should we always bump?
         new_root.version += 1
-
-        # 5. Sign
         new_root_md = Metadata(new_root)
         _sign(new_root_md, current_root_md.signed)
-
-        # 6. Save
         _save(new_root_md)
 
     console.print("Bye.")
