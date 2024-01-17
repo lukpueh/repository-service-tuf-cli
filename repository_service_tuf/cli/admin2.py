@@ -239,12 +239,11 @@ def _configure_expiry(root: Root) -> None:
                 break
 
         days = _PositiveIntPrompt.ask(
-            "Please enter number of days by which to "
-            "extend the expiry date, starting today"
+            "Please enter number of days from now, when root should expire"
         )
 
         root.expires = datetime.utcnow() + timedelta(days=days)
-        console.print(f"Extended root expiry date by {days} days")
+        console.print(f"Changed root to expire in {days} days")
 
 
 def _load_signer(public_key: Key) -> Signer:
