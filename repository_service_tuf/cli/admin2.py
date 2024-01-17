@@ -83,6 +83,20 @@ def _load_public_key() -> Tuple[Key, str]:
     return key, uri
 
 
+def _show_root_key_info(root: Root) -> None:
+    """Pretty print root keys and threshold."""
+    # TODO: Make pretty / useful
+    root_role = root.get_delegated_role(Root.type)
+    console.print(f"Current Threshold: {root_role.threshold}")
+    console.print("Current Keys:")
+    for keyid in root_role.keyids:
+        key = root.get_key(keyid)
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD, "")
+        if name:
+            name = f"(name: {name})"
+        console.print(f"keyid: {keyid}", name)
+
+
 def _add_root_keys(root: Root) -> None:
     """Prompt loop to add root keys.
 
@@ -128,6 +142,8 @@ def _add_root_keys(root: Root) -> None:
         root.add_key(new_key, Root.type)
         console.print(f"Added root key '{new_key.keyid}'")
 
+        _show_root_key_info(root)
+
 
 def _remove_root_keys(root: Root) -> None:
     """Prompt loop to remove root keys.
@@ -148,6 +164,8 @@ def _remove_root_keys(root: Root) -> None:
         root.revoke_key(keyid, Root.type)
         console.print(f"Removed root key '{keyid}'")
 
+        _show_root_key_info(root)
+
 
 def _configure_root_keys(root: Root) -> None:
     """Prompt series with loop to add/remove root keys, and enter threshold.
@@ -159,9 +177,10 @@ def _configure_root_keys(root: Root) -> None:
 
     # Get current keys
     root_role = root.get_delegated_role(Root.type)
-    # TODO: _show_root_key()
 
     while True:
+        _show_root_key_info(root)
+
         # Allow user to skip offline key change (assumes valid metadata)
         if not Confirm.ask("Do you want to change root keys?"):
             break
@@ -199,6 +218,14 @@ def _configure_online_key(root: Root) -> None:
         # TODO: handle missing online key -> fail in update (unless bootstrap)
         ts_role = root.get_delegated_role(Timestamp.type)
         current_key = root.get_key(ts_role.keyids[0])
+
+        # Show key
+        # TODO: Make pretty and useful
+        console.print("Current Key:")
+        uri = current_key.unrecognized_fields.get(KEY_URI_FIELD, "")
+        if uri:
+            uri = f"(uri: {uri})"
+        console.print(f"keyid: {current_key.keyid}", uri)
 
         # Allow user to skip online key change (assumes valid metadata)
         if not Confirm.ask("Do you want to change the online key?"):
