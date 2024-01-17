@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from rich.pretty import pprint
 from rich.prompt import Confirm, IntPrompt, InvalidResponse, Prompt
+from rich.markdown import Markdown as MD
 from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import CryptoSigner, Key, Signer, SSlibKey
 from tuf.api.metadata import (
@@ -155,7 +156,7 @@ def _configure_root_keys(root: Root) -> None:
     Loops until user exit (at least one root key must be set).
 
     """
-    console.print("Root Key Configuration")
+    console.print(MD("## Root Key Configuration"))
 
     # Get current keys
     root_role = root.get_delegated_role(Root.type)
@@ -188,7 +189,7 @@ def _configure_online_key(root: Root) -> None:
 
     Loops until user exit.
     """
-    console.print("Online Key Configuration")
+    console.print(MD("## Online Key Configuration"))
     # TODO: _show_online_key()
 
     while True:
@@ -228,7 +229,7 @@ def _configure_expiry(root: Root) -> None:
     Loops until user exit and metadata is not expired.
     """
     format_ = "%x"
-    console.print("Expiration Date Configuration")
+    console.print(MD("## Expiration Date Configuration"))
     # Locale's appropriate date representation.
 
     while True:
@@ -406,7 +407,7 @@ def update() -> None:
 
     Will ask for root metadata, public key paths, and signing key paths.
     """
-    console.print("Root Metadata Update")
+    console.print(MD("# Root Metadata Update"))
     # Load
     current_root_md = _load("Enter path to root to update")
     new_root = deepcopy(current_root_md.signed)

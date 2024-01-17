@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
 from repository_service_tuf.cli.admin2 import sign
 
 _FILES = Path(__file__).parent.parent.parent / "files"
