@@ -172,8 +172,10 @@ def _configure_root_keys(root: Root) -> None:
         # add/remove, than the other way around.
         if Confirm.ask("Do you want to change the root signature threshold?"):
             root_role.threshold = _PositiveIntPrompt.ask(
-                "Please enter root signature threshold",
-                default=root_role.threshold,
+                "Please enter root signature threshold"
+            )
+            console.print(
+                f"Changed root signature threshold to {root_role.threshold}"
             )
 
         # Allow removing keys, even if we drop below threshold.
