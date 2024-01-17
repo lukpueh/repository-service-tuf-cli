@@ -318,7 +318,7 @@ class TestSign:
             ),
             ("Current Key:",),
             (
-                "keyid: 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3 (uri: fn:ec.pub)",
+                "keyid: 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3 (uri: 'fn:50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3')",
             ),
             (
                 "Do you want to change the online key? [y/n]: ",

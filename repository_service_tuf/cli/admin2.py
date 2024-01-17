@@ -17,7 +17,6 @@ TODO
 - Integrate with existing admin cli
 
 """
-import os
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
@@ -61,13 +60,9 @@ class _PositiveIntPrompt(IntPrompt):
         return return_value
 
 
-def _load_public_key() -> Tuple[Key, str]:
-    """Ask for details to load public key, load and return key and uri."""
-    # TODO: Give choice -- data (copy paste), hsm, aws, sigstore, ... -- and
-    # consider configuring signer based on that choice. Note that for online
-    # and offline signing, different choices might be interesting.
+def _load_public_key_from_file() -> Key:
+    """Ask key and return with signer URI."""
 
-    # TODO: clarify supported key types, format
     path = Prompt.ask("Please enter a public key path")
     with open(path, "rb") as f:
         public_pem = f.read()
@@ -76,11 +71,7 @@ def _load_public_key() -> Tuple[Key, str]:
 
     key = SSlibKey.from_crypto(crypto)
 
-    # for file based keys, we use a "relative file path uri"
-    # see repository-service-tuf/repository-service-tuf#580
-    uri = f"fn:{os.path.basename(path)}"
-
-    return key, uri
+    return key
 
 
 def _show_root_key_info(root: Root) -> None:
@@ -116,7 +107,7 @@ def _add_root_keys(root: Root) -> None:
                 break
 
         try:
-            new_key, _ = _load_public_key()
+            new_key = _load_public_key_from_file()
         except (OSError, ValueError) as e:
             console.print(f"Cannot load: {e}")
             continue
@@ -224,7 +215,7 @@ def _configure_online_key(root: Root) -> None:
         console.print("Current Key:")
         uri = current_key.unrecognized_fields.get(KEY_URI_FIELD, "")
         if uri:
-            uri = f"(uri: {uri})"
+            uri = f"(uri: '{uri}')"
         console.print(f"keyid: {current_key.keyid}", uri)
 
         # Allow user to skip online key change (assumes valid metadata)
@@ -233,10 +224,19 @@ def _configure_online_key(root: Root) -> None:
 
         # Load new key
         try:
-            new_key, uri = _load_public_key()
+            new_key = _load_public_key_from_file()
+
         except (OSError, ValueError) as e:
             console.print(f"Cannot load: {e}")
             continue
+
+        # For file-based keys we default to a "relative file path uri" using
+        # keyid as filename. The online signing key must be made available to
+        # the worker under that filename. Additionally, a base path to the file
+        # can be specified via container configuration.
+        # see repository-service-tuf/repository-service-tuf#580 for details
+        # TODO: Inform the user, e.g. here.
+        uri = f"fn:{new_key.keyid}"
 
         new_key.unrecognized_fields[KEY_URI_FIELD] = uri
 
