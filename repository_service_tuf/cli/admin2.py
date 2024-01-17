@@ -406,6 +406,7 @@ def update() -> None:
 
     Will ask for root metadata, public key paths, and signing key paths.
     """
+    console.print("Root Metadata Update")
     # Load
     current_root_md = _load("Enter path to root to update")
     new_root = deepcopy(current_root_md.signed)
