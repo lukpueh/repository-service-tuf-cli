@@ -12,7 +12,6 @@ Goals
 TODO
 ----
 - implement ceremony
-- implement update
 - polish enough so that reviewers can try it out
 - Integrate with existing admin cli
 
