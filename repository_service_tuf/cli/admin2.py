@@ -53,14 +53,16 @@ def _load_signer(public_key: Key) -> Signer:
 
 
 @dataclass
-class MissingSignatures:
-    from_keys: Dict[str, Key]
-    count: int
+class VerificationResult:
+    verified: bool
+    signed: Dict[str, Key]
+    unsigned: Dict[str, Key]
+    threshold: int
 
 
 def _get_verification_result(
     delegator: Root, delegate: Metadata[Root]
-) -> MissingSignatures:
+) -> VerificationResult:
     """Get opinionated verification result.
 
     TODO: consider upstreaming features to `get_verification_result`:
@@ -76,15 +78,18 @@ def _get_verification_result(
     result = delegator.get_verification_result(
         Root.type, delegate.signed_bytes, delegate.signatures
     )
+    signed = {keyid: delegator.get_key(keyid) for keyid in result.signed}
     unsigned = {keyid: delegator.get_key(keyid) for keyid in result.unsigned}
 
     threshold = delegator.roles[Root.type].threshold
 
-    missing = None
-    if not result.verified:
-        missing = MissingSignatures(unsigned, threshold - len(result.signed))
+    return VerificationResult(result.verified, signed, unsigned, threshold)
 
-    return missing
+
+@dataclass
+class MissingSignatures:
+    keys: Dict[str, Key]
+    num: int
 
 
 def _get_combined_verification_result(
@@ -94,17 +99,25 @@ def _get_combined_verification_result(
 
     keys = {}
     infos = []
-    missing_sigs = _get_verification_result(metadata.signed, metadata)
-    if missing_sigs:
-        keys.update(missing_sigs.from_keys)
-        infos.append(missing_sigs)
+    result = _get_verification_result(metadata.signed, metadata)
+    if not result.verified:
+        keys.update(result.unsigned)
+        infos.append(
+            MissingSignatures(
+                result.unsigned, result.threshold - len(result.signed)
+            )
+        )
 
     if prev_root:
-        prev_missing_sigs = _get_verification_result(prev_root, metadata)
-        if prev_missing_sigs:
-            if missing_sigs != prev_missing_sigs:
-                keys.update(prev_missing_sigs.from_keys)
-                infos.append(prev_missing_sigs)
+        prev_result = _get_verification_result(prev_root, metadata)
+        if not prev_result.verified:
+            prev_missing = MissingSignatures(
+                prev_result.unsigned,
+                prev_result.threshold - len(prev_result.signed),
+            )
+            if prev_missing not in infos:
+                keys.update(prev_result.unsigned)
+                infos.append(prev_missing)
 
     return keys, infos
 
@@ -127,8 +140,8 @@ def _sign_one(
     _show(metadata.signed)
     for missing_sig in missing_sigs:
         console.print(
-            f"need {missing_sig.count} signature(s) from any of "
-            f"{sorted(missing_sig.from_keys)}"
+            f"need {missing_sig.num} signature(s) from any of "
+            f"{sorted(missing_sig.keys)}"
         )
 
     # Loop until success
