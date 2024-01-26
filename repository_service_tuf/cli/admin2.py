@@ -18,7 +18,7 @@ TODO
 
 """
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse
 
 import click
@@ -26,10 +26,11 @@ from click import ClickException
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from requests import request
 from requests.exceptions import RequestException
-from rich.pretty import pprint
+from rich.markdown import Markdown
 from rich.prompt import Prompt
+from rich.table import Table
 from securesystemslib.signer import CryptoSigner, Key, Signature, Signer
-from tuf.api.metadata import Metadata, Root, UnsignedMetadataError
+from tuf.api.metadata import Metadata, Root, Timestamp, UnsignedMetadataError
 
 from repository_service_tuf.cli import console, rstuf
 from repository_service_tuf.helpers.api_client import URL as ROUTE
@@ -147,9 +148,38 @@ def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
     return signature
 
 
+def _get_root_keys(root: Root) -> List[Key]:
+    return [root.get_key(keyid) for keyid in root.roles[Root.type].keyids]
+
+
+def _get_online_key(root: Root) -> Key:
+    # TODO: assert all online roles have the same and only one keyid
+    return root.get_key(root.roles[Timestamp.type].keyids[0])
+
+
 def _show(root: Root):
     """Pretty print root metadata."""
-    pprint(root.to_dict())
+
+    key_table = Table("Role", "ID", "Name", "Signing Scheme", "Public Value")
+    for key in _get_root_keys(root):
+        public_value = key.keyval["public"]  # SSlibKey-specific
+        name = key.unrecognized_fields.get("name", "-")
+        key_table.add_row("Root", key.keyid, name, key.scheme, public_value)
+    key = _get_online_key(root)
+    key_table.add_row(
+        "Online", key.keyid, "-", key.scheme, key.keyval["public"]
+    )
+
+    root_table = Table("Infos", "Keys", title="Root Metadata")
+    root_table.add_row(
+        (
+            f"Expiration: {root.expires:%x}\n"
+            f"Threshold: {root.roles[Root.type].threshold}"
+        ),
+        key_table,
+    )
+
+    console.print(root_table)
 
 
 def _request(method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
@@ -227,7 +257,7 @@ def admin2():
 )
 def sign(api_server: str) -> None:
     """Add one signature to root metadata."""
-    console.print("Sign")
+    console.print("\n", Markdown("# Metadata Signing Tool"))
 
     try:
         root_md, prev_root = _fetch_metadata(api_server)
