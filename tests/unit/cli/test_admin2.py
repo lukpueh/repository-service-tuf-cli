@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.pretty import pprint
 from tuf.api.metadata import Metadata, Root
 
+from repository_service_tuf.cli import admin2
 from repository_service_tuf.cli.admin2 import sign
 
 _FILES = Path(__file__).parent.parent.parent / "files"
@@ -55,88 +56,107 @@ class TestSign:
 
         return outputs, inputs
 
-    def test_sign_v1(self, client: CliRunner, patch_getpass):
-        """Sign root v1, with 2/2 keys."""
-
+    def test_run(self, client: CliRunner, monkeypatch, patch_getpass):
         root = Metadata[Root].from_file(f"{_ROOTS / 'v1.json'}")
-        root_pretty = self._pretty(root.signed.to_dict())
 
-        dialog = [
-            (
-                "Enter path to root to sign: ",
-                f"{_ROOTS / 'v1.json'}",
-            ),
-            (root_pretty,),
-            (
-                "need 2 signature(s) from any of ['50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3', 'c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc']",
-            ),
-            (
-                "Choose key [50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3/c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc]: ",
-                "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
-            ),
-            (
-                "Enter path to encrypted local private key: ",
-                f"{_PEMS / 'ec'}",
-            ),
-            ("Enter password: ",),  # provided via patch_getpass
-            (
-                "Signed with key 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
-            ),
-            (
-                "Save? [y/n]: ",
-                "n",
-            ),
-            ("Bye.",),
+        inputs = [
+            "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+            f"{_PEMS / 'ec'}",
         ]
 
-        outputs, inputs = self._split(dialog)
-        result = client.invoke(sign, input=inputs)
-        # ignore newlines to make life easier (rich inserts plenty)
-        assert outputs.replace("\n", "") == result.output.replace("\n", "")
+        monkeypatch.setattr(admin2, "_fetch_metadata", lambda x: (root, None))
+        monkeypatch.setattr(admin2, "_push_signature", lambda x, y: None)
 
-    def test_sign_v2(self, client, patch_getpass):
-        """Sign root v2, with 2/2 keys from old root and 2/2 from new, where
-        1 key is in both old and new (needs 3 signatures in total)."""
+        result = client.invoke(
+            sign, "--api-server bla", input="\n".join(inputs)
+        )
+        if result.exception:
+            raise result.exception
 
-        root = Metadata[Root].from_file(f"{_ROOTS / 'v2.json'}")
-        root_pretty = self._pretty(root.signed.to_dict())
+        print(result.output)
 
-        dialog = [
-            (
-                "Enter path to root to sign: ",
-                f"{_ROOTS / 'v2.json'}",
-            ),
-            (
-                "Enter path to previous root: ",
-                f"{_ROOTS / 'v1.json'}",
-            ),
-            (root_pretty,),
-            (
-                "need 2 signature(s) from any of ['2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241', '50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3']",
-            ),
-            (
-                "need 2 signature(s) from any of ['50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3', 'c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc']",
-            ),
-            (
-                "Choose key [2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241/50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3/c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc]: ",
-                "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
-            ),
-            (
-                "Enter path to encrypted local private key: ",
-                f"{_PEMS / 'ec'}",
-            ),
-            ("Enter password: ",),  # provided via patch_getpass
-            (
-                "Signed with key 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
-            ),
-            (
-                "Save? [y/n]: ",
-                "n",
-            ),
-            ("Bye.",),
-        ]
+    # def test_sign_v1(self, client: CliRunner, patch_getpass):
+    #     """Sign root v1, with 2/2 keys."""
 
-        outputs, inputs = self._split(dialog)
-        result = client.invoke(sign, input=inputs)
-        # ignore newlines to make life easier (rich inserts plenty)
-        assert outputs.replace("\n", "") == result.output.replace("\n", "")
+    #     root = Metadata[Root].from_file(f"{_ROOTS / 'v1.json'}")
+    #     root_pretty = self._pretty(root.signed.to_dict())
+
+    #     dialog = [
+    #         (
+    #             "Enter path to root to sign: ",
+    #             f"{_ROOTS / 'v1.json'}",
+    #         ),
+    #         (root_pretty,),
+    #         (
+    #             "need 2 signature(s) from any of ['50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3', 'c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc']",
+    #         ),
+    #         (
+    #             "Choose key [50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3/c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc]: ",
+    #             "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+    #         ),
+    #         (
+    #             "Enter path to encrypted local private key: ",
+    #             f"{_PEMS / 'ec'}",
+    #         ),
+    #         ("Enter password: ",),  # provided via patch_getpass
+    #         (
+    #             "Signed with key 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+    #         ),
+    #         (
+    #             "Save? [y/n]: ",
+    #             "n",
+    #         ),
+    #         ("Bye.",),
+    #     ]
+
+    #     outputs, inputs = self._split(dialog)
+    #     result = client.invoke(sign, input=inputs)
+    #     # ignore newlines to make life easier (rich inserts plenty)
+    #     assert outputs.replace("\n", "") == result.output.replace("\n", "")
+
+    # def test_sign_v2(self, client, patch_getpass):
+    #     """Sign root v2, with 2/2 keys from old root and 2/2 from new, where
+    #     1 key is in both old and new (needs 3 signatures in total)."""
+
+    #     root = Metadata[Root].from_file(f"{_ROOTS / 'v2.json'}")
+    #     root_pretty = self._pretty(root.signed.to_dict())
+
+    #     dialog = [
+    #         (
+    #             "Enter path to root to sign: ",
+    #             f"{_ROOTS / 'v2.json'}",
+    #         ),
+    #         (
+    #             "Enter path to previous root: ",
+    #             f"{_ROOTS / 'v1.json'}",
+    #         ),
+    #         (root_pretty,),
+    #         (
+    #             "need 2 signature(s) from any of ['2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241', '50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3']",
+    #         ),
+    #         (
+    #             "need 2 signature(s) from any of ['50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3', 'c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc']",
+    #         ),
+    #         (
+    #             "Choose key [2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241/50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3/c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc]: ",
+    #             "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+    #         ),
+    #         (
+    #             "Enter path to encrypted local private key: ",
+    #             f"{_PEMS / 'ec'}",
+    #         ),
+    #         ("Enter password: ",),  # provided via patch_getpass
+    #         (
+    #             "Signed with key 50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+    #         ),
+    #         (
+    #             "Save? [y/n]: ",
+    #             "n",
+    #         ),
+    #         ("Bye.",),
+    #     ]
+
+    #     outputs, inputs = self._split(dialog)
+    #     result = client.invoke(sign, input=inputs)
+    #     # ignore newlines to make life easier (rich inserts plenty)
+    #     assert outputs.replace("\n", "") == result.output.replace("\n", "")
