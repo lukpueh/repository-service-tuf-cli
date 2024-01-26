@@ -75,6 +75,28 @@ class TestSign:
 
         print(result.output)
 
+    def test_run2(self, client: CliRunner, monkeypatch, patch_getpass):
+        root1 = Metadata[Root].from_file(f"{_ROOTS / 'v1.json'}")
+        root2 = Metadata[Root].from_file(f"{_ROOTS / 'v2.json'}")
+
+        inputs = [
+            "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+            f"{_PEMS / 'ec'}",
+        ]
+
+        monkeypatch.setattr(
+            admin2, "_fetch_metadata", lambda x: (root2, root1.signed)
+        )
+        monkeypatch.setattr(admin2, "_push_signature", lambda x, y: None)
+
+        result = client.invoke(
+            sign, "--api-server bla", input="\n".join(inputs)
+        )
+        if result.exception:
+            raise result.exception
+
+        print(result.output)
+
     # def test_sign_v1(self, client: CliRunner, patch_getpass):
     #     """Sign root v1, with 2/2 keys."""
 
