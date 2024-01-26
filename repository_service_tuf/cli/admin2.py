@@ -18,6 +18,7 @@ TODO
 
 """
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse
 
@@ -51,9 +52,15 @@ def _load_signer(public_key: Key) -> Signer:
     return CryptoSigner(private_key, public_key)
 
 
+@dataclass
+class VerificationResult:
+    verified: bool
+    unsigned: Dict[str, Key]
+    threshold: int
+
 def _get_verification_result(
     delegator: Root, delegate: Metadata[Root]
-) -> Tuple[Dict[str, Key], str]:
+) -> VerificationResult:
     """Get opinionated verification result.
 
     TODO: consider upstreaming features to `get_verification_result`:
@@ -69,39 +76,29 @@ def _get_verification_result(
     result = delegator.get_verification_result(
         Root.type, delegate.signed_bytes, delegate.signatures
     )
-    msg = ""
-    if not result.verified:
-        missing = delegator.roles[Root.type].threshold - len(result.signed)
-        msg = (
-            f"need {missing} signature(s) from any of "
-            f"{sorted(result.unsigned)}"
-        )
-
-    unused_keys = {
+    unsigned = {
         keyid: delegator.get_key(keyid) for keyid in result.unsigned
     }
+    threshold = delegator.roles[Root.type].threshold
+    return VerificationResult(result.verified, unsigned, threshold)
 
-    return unused_keys, msg
 
 
 def _get_combined_verification_result(
     metadata: Metadata[Root], prev_root: Optional[Root]
-) -> Tuple[Dict[str, Key], str]:
+) -> Tuple[bool, Dict[str, Key], Renderable]:
     """Get combined verification results from previous and current root."""
-    unused_keys, missing_sig_msg = _get_verification_result(
-        metadata.signed, metadata
-    )
-    if prev_root:
-        prev_keys, prev_msg = _get_verification_result(prev_root, metadata)
-        unused_keys.update(prev_keys)
 
-        # Combine "missing signatures" messages from old and new root:
-        # - show only non-empty message (filter)
-        # - show only one message, if both are equal (set)
-        missing_sig_msg = "\n".join(
-            filter(None, sorted({missing_sig_msg, prev_msg}))
-        )
-    return unused_keys, missing_sig_msg
+    messages = []
+    result = _get_verification_result(metadata, metadata)
+    if result.verified:
+        messages.append(_get_missing_signature_message(result))
+
+    if prev_root:
+        prev_result = _get_verification_result(prev_root, metadata)
+        messages
+
+    return unsigned, messages
 
 
 def _sign_one(
@@ -120,7 +117,7 @@ def _sign_one(
         return None
 
     _show(metadata.signed)
-    console.print(missing_sig_msg)
+    console.print(*missing_sig_msg)
 
     # Loop until success
     signature = None
