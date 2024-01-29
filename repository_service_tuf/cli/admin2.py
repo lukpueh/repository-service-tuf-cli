@@ -119,12 +119,18 @@ def _get_missing_sig_infos(
     return infos
 
 
-def _show_missing_sig_infos(missing_sigs: List[MissingSignatures]) -> None:
-    for missing_sig in missing_sigs:
-        console.print(
-            f"need {missing_sig.num} signature(s) from any of "
-            f"{sorted(missing_sig.keys)}"
-        )
+def _show_missing_sig_infos(
+    missing_sig_infos: List[MissingSignatures],
+) -> None:
+    for info in missing_sig_infos:
+        title = f"Please add {info.num} more signature(s) from any of "
+
+        key_table = Table("ID", "Name", title=title)
+        for keyid, key in info.keys.items():
+            name = key.unrecognized_fields.get("name", "-")
+            key_table.add_row(keyid, name)
+
+        console.print(key_table)
 
 
 def _sign_one(
@@ -140,7 +146,7 @@ def _sign_one(
         console.print("Metadata fully signed.")
         return None
 
-    # Merge unused keys from missing_sigs
+    # Merge unused keys from 1 or 2 missing sigs infos
     unused_keys = {
         keyid: key
         for info in missing_sig_infos
