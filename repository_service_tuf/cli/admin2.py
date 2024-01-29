@@ -54,6 +54,11 @@ def _load_signer(public_key: Key) -> Signer:
 
 @dataclass
 class VerificationResult:
+    """tuf.api.metadata.VerificationResult but with Keys objects
+
+    Likely upstreamed (theupdateframework/python-tuf#2544)
+    """
+
     verified: bool
     signed: Dict[str, Key]
     unsigned: Dict[str, Key]
@@ -63,18 +68,7 @@ class VerificationResult:
 def _get_verification_result(
     delegator: Root, delegate: Metadata[Root]
 ) -> VerificationResult:
-    """Get opinionated verification result.
-
-    TODO: consider upstreaming features to `get_verification_result`:
-    - return keys (e.g. as dict), not keyids!
-    - missing signature count is convenient, but not necessary
-    - could also just return threshold
-    (IIRC threshold was removed from result, because it can't be unioned.
-     Maybe threshold in the result is more useful, than the union method.)
-
-    Returns dict of unused keys and a message, to tell how many signatures are
-    missing and from which keys. Empty message means fully signed.
-    """
+    """Return signature verification result for delegate."""
     result = delegator.get_verification_result(
         Root.type, delegate.signed_bytes, delegate.signatures
     )
@@ -88,25 +82,29 @@ def _get_verification_result(
 
 @dataclass
 class MissingSignatures:
+    """Missing signature info.
+
+    Attributes:
+        keys: Keys that can be used to reach the threshold.
+        num: Number of keys that must be used to reach the threshold.
+    """
+
     keys: Dict[str, Key]
     num: int
 
 
-def _get_combined_verification_result(
+def _get_missing_sig_infos(
     metadata: Metadata[Root], prev_root: Optional[Root]
-) -> Tuple[Dict[str, Key], List[MissingSignatures]]:
-    """Get combined verification results from previous and current root."""
+) -> Tuple[List[MissingSignatures]]:
+    """Verify signatures and return unique per-delegator missing sig infos."""
 
-    keys = {}
     infos = []
     result = _get_verification_result(metadata.signed, metadata)
     if not result.verified:
-        keys.update(result.unsigned)
-        infos.append(
-            MissingSignatures(
-                result.unsigned, result.threshold - len(result.signed)
-            )
+        missing = MissingSignatures(
+            result.unsigned, result.threshold - len(result.signed)
         )
+        infos.append(missing)
 
     if prev_root:
         prev_result = _get_verification_result(prev_root, metadata)
@@ -116,10 +114,17 @@ def _get_combined_verification_result(
                 prev_result.threshold - len(prev_result.signed),
             )
             if prev_missing not in infos:
-                keys.update(prev_result.unsigned)
                 infos.append(prev_missing)
 
-    return keys, infos
+    return infos
+
+
+def _show_missing_sig_infos(missing_sigs: List[MissingSignatures]) -> None:
+    for missing_sig in missing_sigs:
+        console.print(
+            f"need {missing_sig.num} signature(s) from any of "
+            f"{sorted(missing_sig.keys)}"
+        )
 
 
 def _sign_one(
@@ -130,19 +135,20 @@ def _sign_one(
     Return None, if metadata is already fully missing.
     Otherwise, loop until success and returns the added signature.
     """
-    unused_keys, missing_sigs = _get_combined_verification_result(
-        metadata, prev_root
-    )
-    if not missing_sigs:
+    missing_sig_infos = _get_missing_sig_infos(metadata, prev_root)
+    if not missing_sig_infos:
         console.print("Metadata fully signed.")
         return None
 
+    # Merge unused keys from missing_sigs
+    unused_keys = {
+        keyid: key
+        for info in missing_sig_infos
+        for keyid, key in info.keys.items()
+    }
+
     _show(metadata.signed)
-    for missing_sig in missing_sigs:
-        console.print(
-            f"need {missing_sig.num} signature(s) from any of "
-            f"{sorted(missing_sig.keys)}"
-        )
+    _show_missing_sig_infos(missing_sig_infos)
 
     # Loop until success
     signature = None
