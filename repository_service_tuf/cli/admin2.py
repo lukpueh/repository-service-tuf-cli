@@ -2,19 +2,10 @@
 
 Provides alternative ceremony, metadata update, and sign admin cli commands.
 
-Goals
------
-- use state-of-the-art securesystemslib Signer API only
-- simplify (e.g. avoid custom/redundant abstractions over Metadata API)
-- configure online signer location via uri attached to public key
-  (for repository-service-tuf/repository-service-tuf-worker#427)
-
 TODO
 ----
 - implement ceremony
 - implement update
-- polish enough so that reviewers can try it out
-- Integrate with existing admin cli
 
 """
 import time
@@ -38,9 +29,6 @@ from repository_service_tuf.helpers.api_client import URL as ROUTE
 
 def _load_signer(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
-    # TODO: Give choice -> hsm, sigstore, ...
-
-    # TODO: clarify supported key types, format
     path = Prompt.ask("Please enter path to encrypted local private key")
 
     with open(path, "rb") as f:
