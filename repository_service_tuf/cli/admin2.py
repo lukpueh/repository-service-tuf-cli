@@ -169,12 +169,12 @@ def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
     Return Signature or None, if signing fails.
     """
     signature = None
+    # TODO: Make sure keyid / name is not truncated in key table.
     # TODO: Check name collision?
-    # TODO: Does not support keyid prefix.
-    # - Should we?
-    # - We'd also need to check for collision.
-    # - Should we just enforce adding mandatory
-    # - unique names in bootstrap/update cli, and use full keyids as fallback?
+    # TODO: Support keyid prefix?
+    # -> Then we'd also need to check for collision. Or, should we just enforce
+    #    adding mandatory unique names in bootstrap/update cli, and use full
+    #    keyids as fallback?
     choices = {}
     for keyid, key in keys.items():
         choices[keyid] = key
