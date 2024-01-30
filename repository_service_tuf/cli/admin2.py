@@ -42,12 +42,12 @@ def _load_signer(public_key: Key) -> Signer:
     # TODO: Give choice -> hsm, sigstore, ...
 
     # TODO: clarify supported key types, format
-    path = Prompt.ask("Enter path to encrypted local private key")
+    path = Prompt.ask("Please enter path to encrypted local private key")
 
     with open(path, "rb") as f:
         private_pem = f.read()
 
-    password = Prompt.ask("Enter password", password=True)
+    password = Prompt.ask("Please enter password", password=True)
     private_key = load_pem_private_key(private_pem, password.encode())
     return CryptoSigner(private_key, public_key)
 
@@ -183,7 +183,7 @@ def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
             choices[name] = key
 
     choice = Prompt.ask(
-        "Please choose a signing key by entering keyid or name",
+        "Please choose signing key by entering keyid or name",
         choices=choices,
         show_choices=False,
     )
@@ -191,10 +191,10 @@ def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
     try:
         signer = _load_signer(key)
         signature = metadata.sign(signer, append=True)
-        console.print(f"Signed with key {key.keyid}")
+        console.print(f"Signed metadata with key '{choice}'")
 
     except (ValueError, OSError, UnsignedMetadataError) as e:
-        console.print(f"Cannot sign: {e}")
+        console.print(f"Cannot sign metadata with key '{choice}': {e}")
 
     return signature
 
