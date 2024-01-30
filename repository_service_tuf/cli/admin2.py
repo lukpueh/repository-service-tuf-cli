@@ -67,53 +67,23 @@ def _get_verification_result(
     return VerificationResult(result.verified, signed, unsigned, threshold)
 
 
-@dataclass
-class MissingSignatures:
-    """Missing signature info.
-
-    Attributes:
-        keys: Keys that can be used to reach the threshold.
-        num: Number of keys that must be used to reach the threshold.
-    """
-
-    keys: Dict[str, Key]
-    num: int
-
-
-def _get_missing_sig_infos(
-    metadata: Metadata[Root], prev_root: Optional[Root]
-) -> Tuple[List[MissingSignatures]]:
-    """Verify signatures and return unique per-delegator missing sig infos."""
-
-    infos = []
-    result = _get_verification_result(metadata.signed, metadata)
-    if not result.verified:
-        missing = MissingSignatures(
-            result.unsigned, result.threshold - len(result.signed)
-        )
-        infos.append(missing)
-
-    if prev_root:
-        prev_result = _get_verification_result(prev_root, metadata)
-        if not prev_result.verified:
-            prev_missing = MissingSignatures(
-                prev_result.unsigned,
-                prev_result.threshold - len(prev_result.signed),
-            )
-            if prev_missing not in infos:
-                infos.append(prev_missing)
-
-    return infos
-
-
-def _show_missing_sig_infos(
-    missing_sig_infos: List[MissingSignatures],
+def _show_missing_signatures(
+    result: VerificationResult, prev_result: Optional[VerificationResult]
 ) -> None:
-    for info in missing_sig_infos:
-        title = f"Please add {info.num} more signature(s) from any of "
+    results_to_show = [result]
+    if prev_result:
+        if (
+            prev_result.signed != result.signed
+            or prev_result.threshold != result.threshold
+        ):
+            results_to_show.append(prev_result)
 
+    for result in results_to_show:
+        missing = result.threshold - len(result.signed)
+        title = f"Please add {missing} more signature(s) from any of "
         key_table = Table("ID", "Name", title=title)
-        for keyid, key in info.keys.items():
+
+        for keyid, key in result.unsigned.items():
             name = key.unrecognized_fields.get("name")
             key_table.add_row(keyid, name)
 
@@ -128,25 +98,28 @@ def _sign_one(
     Return None, if metadata is already fully missing.
     Otherwise, loop until success and returns the added signature.
     """
-    missing_sig_infos = _get_missing_sig_infos(metadata, prev_root)
-    if not missing_sig_infos:
-        console.print("Metadata fully signed.")
+    result = _get_verification_result(metadata.signed, metadata)
+    keys_to_use = {}
+    if not result.verified:
+        keys_to_use = result.unsigned
+
+    prev_result = None
+    if prev_root:
+        prev_result = _get_verification_result(prev_root, metadata)
+        if not prev_result.verified:
+            keys_to_use.update(prev_result.unsigned)
+
+    if not keys_to_use:
+        console.print("Metadata is fully signed.")
         return None
 
-    # Merge unused keys from 1 or 2 missing sigs infos
-    unused_keys = {
-        keyid: key
-        for info in missing_sig_infos
-        for keyid, key in info.keys.items()
-    }
-
     _show(metadata.signed)
-    _show_missing_sig_infos(missing_sig_infos)
+    _show_missing_signatures(result, prev_result)
 
     # Loop until success
     signature = None
     while not signature:
-        signature = _sign(metadata, unused_keys)
+        signature = _sign(metadata, keys_to_use)
 
     return signature
 
