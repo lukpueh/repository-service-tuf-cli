@@ -127,7 +127,7 @@ def _show_missing_sig_infos(
 
         key_table = Table("ID", "Name", title=title)
         for keyid, key in info.keys.items():
-            name = key.unrecognized_fields.get("name", "-")
+            name = key.unrecognized_fields.get("name")
             key_table.add_row(keyid, name)
 
         console.print(key_table)
@@ -170,11 +170,28 @@ def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
     Return Signature or None, if signing fails.
     """
     signature = None
-    keyid = Prompt.ask("Choose key", choices=sorted(keys))
+    # TODO: Check name collision?
+    # TODO: Does not support keyid prefix.
+    # - Should we?
+    # - We'd also need to check for collision.
+    # - Should we just enforce adding mandatory
+    # - unique names in bootstrap/update cli, and use full keyids as fallback?
+    choices = {}
+    for keyid, key in keys.items():
+        choices[keyid] = key
+        if name := key.unrecognized_fields.get("name"):
+            choices[name] = key
+
+    choice = Prompt.ask(
+        "Please choose a signing key by entering keyid or name",
+        choices=choices,
+        show_choices=False,
+    )
+    key = choices[choice]
     try:
-        signer = _load_signer(keys[keyid])
+        signer = _load_signer(key)
         signature = metadata.sign(signer, append=True)
-        console.print(f"Signed with key {keyid}")
+        console.print(f"Signed with key {key.keyid}")
 
     except (ValueError, OSError, UnsignedMetadataError) as e:
         console.print(f"Cannot sign: {e}")
@@ -197,11 +214,11 @@ def _show(root: Root):
     key_table = Table("Role", "ID", "Name", "Signing Scheme", "Public Value")
     for key in _get_root_keys(root):
         public_value = key.keyval["public"]  # SSlibKey-specific
-        name = key.unrecognized_fields.get("name", "-")
+        name = key.unrecognized_fields.get("name")
         key_table.add_row("Root", key.keyid, name, key.scheme, public_value)
     key = _get_online_key(root)
     key_table.add_row(
-        "Online", key.keyid, "-", key.scheme, key.keyval["public"]
+        "Online", key.keyid, "", key.scheme, key.keyval["public"]
     )
 
     root_table = Table("Infos", "Keys", title="Root Metadata")
