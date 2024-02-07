@@ -21,6 +21,6 @@ ruamel.yaml==0.18.5
 ruamel.yaml.clib==0.2.8; python_version < '3.13' and platform_python_implementation == 'CPython'
 securesystemslib[crypto]==0.31.0; python_version ~= '3.8'
 sqlalchemy==2.0.25; python_version >= '3.7'
-tuf==3.1.0; python_version >= '3.8'
+tuf @ git+https://github.com/theupdateframework/python-tuf@be55b87; python_version >= '3.8'; python_version >= '3.8'
 typing-extensions==4.9.0; python_version >= '3.8'
 urllib3==2.1.0; python_version >= '3.8'
