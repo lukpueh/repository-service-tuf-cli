@@ -104,18 +104,17 @@ def _load_public_key_from_file() -> Key:
     return key
 
 
-def _show_root_key_info(root: Root) -> None:
-    """Pretty print root keys and threshold."""
-    # TODO: Make prettier and useful
+def _show_root_keys(root: Root) -> None:
+    """Pretty print root keys."""
     root_role = root.get_delegated_role(Root.type)
-    console.print(f"Current Threshold: {root_role.threshold}")
-    console.print("Current Keys:")
-    for keyid in root_role.keyids:
-        key = root.get_key(keyid)
-        name = key.unrecognized_fields.get(KEY_NAME_FIELD, "")
-        if name:
-            name = f"(name: {name})"
-        console.print(f"keyid: {keyid}", name)
+
+    table = Table("ID", "Name", title="Current Keys")
+    for keyid, key in _get_root_keys(root).items():
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD)
+        table.add_row(keyid, name)
+
+    console.print(table)
+
 
 
 def _add_root_keys(root: Root) -> None:
@@ -165,7 +164,7 @@ def _add_root_keys(root: Root) -> None:
         root.add_key(new_key, Root.type)
         console.print(f"Added root key '{new_key.keyid}'")
 
-        _show_root_key_info(root)
+        _show_root_keys(root)
 
 
 def _choose_key(reason: str, keys: Dict[str, Key]) -> Tuple[str, Key]:
@@ -201,12 +200,8 @@ def _remove_root_keys(root: Root) -> None:
     """Prompt loop to remove root keys.
 
     Loops until no keys left or user exit (threshold is ignored)."""
-    root_keys = _get_root_keys(root)
 
-    while True:
-        if not root_keys:
-            break
-
+    while root_keys := _get_root_keys(root):
         if not Confirm.ask("Do you want to remove a root key?"):
             break
 
@@ -214,7 +209,7 @@ def _remove_root_keys(root: Root) -> None:
         root.revoke_key(key.keyid, Root.type)
         console.print(f"Removed '{choice}'")
 
-        _show_root_key_info(root)
+        _show_root_keys(root)
 
 
 def _configure_root_keys(root: Root) -> None:
@@ -223,13 +218,13 @@ def _configure_root_keys(root: Root) -> None:
     Loops until user exit (at least one root key must be set).
 
     """
-    console.print("Root Key Configuration")
+    console.print(Markdown("## Root Key and Threshold Configuration"))
 
     # Get current keys
     root_role = root.get_delegated_role(Root.type)
 
     while True:
-        _show_root_key_info(root)
+        _show_root_keys(root)
 
         # Allow user to skip offline key change (assumes valid metadata)
         if not Confirm.ask("Do you want to change root keys or threshold?"):
@@ -241,24 +236,23 @@ def _configure_root_keys(root: Root) -> None:
         # Add keys regardless of threshold (require 2)
         _add_root_keys(root)
 
-        # Threshold update is optional, depending on the number of root keys
-        # and the current threshold.
+        # Prompt for threshold if it can be changed
+        # Ignore previous threshold to avoid messy conflicts between, can change
+        # must change, cannot change wrt number of root keys.
         max_threshold = len(root_role.keyids) - 1
-        if root_role.threshold <= max_threshold:
-            if not Confirm.ask(
-                "Do you want to change the root signature threshold?"
-            ):
-                continue
-            default_threshold = root_role.threshold
+        if max_threshold == 1:
+            console.print(
+                "Current max threshold is 1. You must add more keys.")
+            root_role.threshold = 1
         else:
-            default_threshold = max_threshold
+            root_role.threshold = IntPrompt.ask(
+                "Please enter threshold (max: {max_threshold})",
+                choices=[str(i) for i in range(1, max_threshold + 1)],
+                show_choices=False,
+            )
 
-        root_role.threshold = IntPrompt.ask(
-            "Please enter a root signature threshold",
-            choices=[str(i) for i in range(1, max_threshold + 1)],
-            show_choices=False,
-            default=default_threshold,
-        )
+
+
 
 
 def _configure_online_key(root: Root) -> None:
@@ -266,18 +260,15 @@ def _configure_online_key(root: Root) -> None:
 
     Loops until user exit.
     """
-    console.print("Online Key Configuration")
+    console.print(Markdown("## Online Key Configuration"))
 
     while True:
         current_key = _get_online_key(root)
 
-        # Show key
-        # TODO: Make pretty and useful
-        console.print("Current Key:")
-        uri = current_key.unrecognized_fields.get(KEY_URI_FIELD, "")
-        if uri:
-            uri = f"(uri: '{uri}')"
-        console.print(f"keyid: {current_key.keyid}", uri)
+        table = Table("ID", "URI", title="Current Key")
+        uri = current_key.unrecognized_fields.get(KEY_URI_FIELD)
+        table.add_row(current_key.keyid, uri)
+        console.print(table)
 
         # Allow user to skip online key change (assumes valid metadata)
         if not Confirm.ask("Do you want to change the online key?"):
@@ -318,7 +309,7 @@ def _configure_expiry(root: Root) -> None:
 
     Loops until user exit and metadata is not expired.
     """
-    console.print("Expiration Date Configuration")
+    console.print(Markdown("## Expiration Date Configuration"))
 
     while True:
         if root.is_expired():
@@ -393,6 +384,8 @@ def _sign_multiple(
     Prints metadata for review once, and signature requirements.
     Loops until fully signed or user exit.
     """
+    console.print(Markdown("## Signing"))
+
     signatures: List[Signature] = []
     show_metadata = True
     while True:
@@ -619,7 +612,8 @@ def update() -> None:
 
     Will ask for root metadata, public key paths, and signing key paths.
     """
-    console.print("Root Metadata Update")
+    console.print("\n", Markdown("# Metadata Update Tool"))
+
     # Load
     current_root_md = _load("Enter path to root to update")
     new_root = deepcopy(current_root_md.signed)
