@@ -620,6 +620,130 @@ def admin2():
 
 
 @admin2.command()  # type: ignore
+def ceremony() -> None:
+    """Bootstrap Ceremony to create initial root metadata and RSTUF config.
+
+    Will ask for public key paths and signing key paths.
+    """
+    console.print("\n", Markdown("# Metadata Bootstrap Tool"))
+
+    root = Root()
+
+    console.print(Markdown("##  Metadata Expiration"))
+    # Prompt for expiry dates
+    expiry_dates = {}
+    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
+        days = _PositiveIntPrompt.ask(
+            "Please enter number of days from now, "
+            f"when {role} should expire",
+            default=100,  # TODO: use per-role constants as default
+        )
+        expiry_date = datetime.utcnow() + timedelta(days=days)
+        console.print(f"{role} expires on {expiry_date:{EXPIRY_FORMAT}}")
+        expiry_dates[role] = expiry_date
+
+    # Set root expiration
+    root.expires = expiry_dates["root"]
+    # TODO: include other dates in payload
+
+    console.print(Markdown("## Artifacts"))
+
+    # TODO: include in payload
+    number_of_bins = IntPrompt.ask(
+        "Choose the number of delegated hash bin roles",
+        default=256,  # TODO: use constant as default
+        choices=[str(2**i) for i in range(1, 15)],
+        show_default=True,
+        show_choices=True,
+    )
+
+    # TODO: include in payload
+    # TODO: validate url
+    targets_base_url = Prompt.ask(
+        "Please enter the targets base URL "
+        "(e.g. https://www.example.com/downloads/)"
+    )
+    if not targets_base_url.endswith("/"):
+        targets_base_url += "/"
+
+    console.print(Markdown("## Root Keys"))
+    number_of_keys = _PositiveIntPrompt.ask("Please enter number of root keys")
+
+    # TODO: validate threshold is not greater than number of keys
+    # TODO: validate threshold is lower than number of keys?
+    # -> requires number of keys to be greater than 1
+    if number_of_keys > 1:
+        threshold = _PositiveIntPrompt.ask("Please enter root threshold")
+    else:
+        console.print("Root threshold is 1 based on number of keys")
+        threshold = 1
+
+    # Set root threshold
+    root.roles[Root.type].threshold = threshold
+
+    console.print(Markdown("### Load Keys"))
+    while len(root.roles[Root.type].keyids) < number_of_keys:
+        try:
+            key = _load_public_key_from_file()
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load: {e}")
+            continue
+
+        if key.keyid in root.keys:
+            console.print("Key already in use.")
+            continue
+
+        while True:
+            name = Prompt.ask("Please enter a key name")
+            if not name:
+                console.print("Key name cannot be empty.")
+                continue
+            if name in [
+                k.unrecognized_fields.get(KEY_NAME_FIELD)
+                for k in root.keys.values()
+            ]:
+                console.print("Key name already in use.")
+                continue
+            break
+
+        key.unrecognized_fields[KEY_NAME_FIELD] = name
+        root.add_key(key, Root.type)
+        console.print(
+            f"Added root key '{name}' "
+            f"({len(root.roles[Root.type].keyids)}/{number_of_keys})"
+        )
+
+    console.print(Markdown("## Online Key"))
+
+    while True:
+        try:
+            key = _load_public_key_from_file()
+
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load: {e}")
+            continue
+
+        # Disallow re-adding a key even if it is for a different role.
+        if key.keyid in root.keys:
+            console.print("Key already in use.")
+            continue
+
+        break
+
+    uri = f"fn:{key.keyid}"
+    key.unrecognized_fields[KEY_URI_FIELD] = uri
+    for role_name in ONLINE_ROLE_NAMES:
+        root.add_key(key, role_name)
+
+    console.print(f"Added online key: '{key.keyid}'")
+
+    # Sign
+    console.print(Markdown("## Online Key"))
+    root_md = Metadata(root)
+    _sign_multiple(root_md, None)
+
+
+@admin2.command()  # type: ignore
 def update() -> None:
     """Update root metadata and bump version.
 
