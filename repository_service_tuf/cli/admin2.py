@@ -116,7 +116,6 @@ def _show_root_keys(root: Root) -> None:
     console.print(table)
 
 
-
 def _add_root_keys(root: Root) -> None:
     """Prompt loop to add root keys.
 
@@ -220,9 +219,6 @@ def _configure_root_keys(root: Root) -> None:
     """
     console.print(Markdown("## Root Key and Threshold Configuration"))
 
-    # Get current keys
-    root_role = root.get_delegated_role(Root.type)
-
     while True:
         _show_root_keys(root)
 
@@ -236,23 +232,36 @@ def _configure_root_keys(root: Root) -> None:
         # Add keys regardless of threshold (require 2)
         _add_root_keys(root)
 
-        # Prompt for threshold if it can be changed
-        # Ignore previous threshold to avoid messy conflicts between, can change
-        # must change, cannot change wrt number of root keys.
-        max_threshold = len(root_role.keyids) - 1
-        if max_threshold == 1:
-            console.print(
-                "Current max threshold is 1. You must add more keys.")
-            root_role.threshold = 1
-        else:
-            root_role.threshold = IntPrompt.ask(
-                "Please enter threshold (max: {max_threshold})",
-                choices=[str(i) for i in range(1, max_threshold + 1)],
-                show_choices=False,
-            )
+        # Set threshold based on keys (must be 1 less than keys)
+        _configure_threshold(root)
 
 
+def _configure_threshold(root: Root) -> None:
+    """Prompt to change threshold.
 
+    NOTE: Unlike other update prompts, this one does not ask, if the user wants
+    to change the threshold. This is because of a tricky relationship of
+    previous, min and max thresholds.
+    """
+    root_role = root.get_delegated_role(Root.type)
+    prev = root_role.threshold
+    max_ = len(root_role.keyids) - 1
+    min_ = 1
+
+    if max_ == min_:
+        root_role.threshold = max_
+        console.print(
+            f"Threshold cannot be greater than {max_} "
+            f"given the number of keys ({len(root_role.keyids)})."
+        )
+    else:
+        root_role.threshold = IntPrompt.ask(
+            f"Please enter desired threshold (previous: {prev}, max: {max_})",
+            choices=[str(i) for i in range(min_, max_ + 1)],
+            show_choices=False,
+        )
+
+    console.print(f"Threshold is set to {root_role.threshold}")
 
 
 def _configure_online_key(root: Root) -> None:
