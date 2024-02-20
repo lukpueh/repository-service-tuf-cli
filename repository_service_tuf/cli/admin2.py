@@ -9,16 +9,6 @@ Goals
 - configure online signer location via uri attached to public key
   (for repository-service-tuf/repository-service-tuf-worker#427)
 
-TODO
-----
-- finalize update
-  - beautify (see pr comments)
-  - api integration
-  - cli options to save payload, or send payload only
-  - assert one valid signature before pushing / saving
-
-- implement ceremony
-
 """
 
 import time
@@ -51,11 +41,11 @@ from securesystemslib.signer import (
 from tuf.api.metadata import (
     Metadata,
     Root,
-    RootVerificationResult,
     Snapshot,
     Targets,
     Timestamp,
     UnsignedMetadataError,
+    VerificationResult,
 )
 from tuf.api.serialization import DeserializationError
 
@@ -373,11 +363,251 @@ def ceremony() -> None:
             key = list(result.unsigned.values())[choice - 1]
 
         while True:
+            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
             try:
                 signer = _load_signer_from_file(key)
                 metadata.sign(signer, append=True)
-                console.print(f"Signed metadata with key '{choice}'")
+                console.print(f"Signed metadata with key '{name}'")
                 break
 
             except (ValueError, OSError, UnsignedMetadataError) as e:
-                console.print(f"Cannot sign metadata with key '{choice}': {e}")
+                console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+
+@admin2.command()  # type: ignore
+@click.argument("root_in", type=click.File("rb"))
+def update(root_in) -> None:
+    """Update root metadata and bump version.
+
+    Will ask for root metadata, public key paths, and signing key paths.
+    """
+    console.print("\n", Markdown("# Metadata Update Tool"))
+
+    ############################################################################
+    # Load root
+    # TODO: load from API
+    prev_root_md = Metadata[Root].from_bytes(root_in.read())
+    root = deepcopy(prev_root_md.signed)
+
+    ############################################################################
+    # Configure expiration
+    console.print(Markdown("## Root Expiration"))
+
+    expired = root.is_expired()
+    console.print(f"Root expire{'d' if expired else 's'} "
+                  f"on {root.expires:{EXPIRY_FORMAT}}")
+
+    if expired or Confirm.ask("Do you want to change the expiry date?",
+                              default="y"):
+        days = _PositiveIntPrompt.ask(
+            "Please enter number of days from now, "
+            f"when root should expire",
+            default=100,  # TODO: use per-role constants as default
+        )
+        expiry_date = datetime.utcnow() + timedelta(days=days)
+        console.print(f"New expiration date is {expiry_date:{EXPIRY_FORMAT}}")
+        root.expires = expiry_date
+
+    ############################################################################
+    # Configure Root Keys
+    console.print(Markdown("## Root Keys"))
+    root_role = root.get_delegated_role(Root.type)
+    # TODO: validate default threshold policy?
+    console.print(f"Current root threshold is {root_role.threshold}")
+    if Confirm.ask("Do you want to change the root threshold?", default="y"):
+        threshold = _PositiveIntPrompt.ask("Please enter root threshold")
+        console.print(f"New root threshold is {threshold}")
+        root_role.threshold = threshold
+
+    while True:
+        # Show current signing keys
+        if root_role.keyids:
+            console.print("Current signing keys are:")
+            for idx, keyid in enumerate(root_role.keyids, start=1):
+                new_key = root.get_key(keyid)
+                name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+                console.print(f"{idx}. {name}")
+
+        # Show missing key info
+        missing = max(0, root_role.threshold - len(root_role.keyids))
+        if missing:
+            console.print(
+                f"{missing} more key(s) needed to meet threshold {root_role.threshold}"
+            )
+        else:
+            console.print(
+                f"Threshold {root_role.threshold} met, more keys can be added."
+            )
+
+        # Show prompt, or skip if the user can only add keys
+        if root_role.keyids:
+            prompt = (
+                "Please press '0' to add key, "
+                "or enter '<number>' to remove key"
+            )
+            default = None
+            if not missing:
+                prompt += ". Press enter to continue"
+                default = -1
+
+            choice = IntPrompt.ask(
+                prompt,
+                choices=[str(i) for i in range(-1, len(root_role.keyids) + 1)],
+                default=default,
+                show_choices=False,
+                show_default=False,
+            )
+
+        else:
+            choice = 0
+
+        if choice == -1:  # Continue
+            break
+
+        elif choice == 0:  # Add key
+            try:
+                new_key = _load_public_key_from_file()
+            except (OSError, ValueError) as e:
+                console.print(f"Cannot load: {e}")
+                continue
+
+            if new_key.keyid in root.keys:
+                console.print("Key already in use.")
+                continue
+
+            while True:
+                name = Prompt.ask("Please enter a key name")
+                if not name:
+                    console.print("Key name cannot be empty.")
+                    continue
+                if name in [
+                    k.unrecognized_fields.get(KEY_NAME_FIELD)
+                    for k in root.keys.values()
+                ]:
+                    console.print("Key name already in use.")
+                    continue
+                break
+
+            new_key.unrecognized_fields[KEY_NAME_FIELD] = name
+            root.add_key(new_key, Root.type)
+            console.print(f"Added root key '{name}'")
+
+        else:  # Remove key
+            keyid = root_role.keyids[choice - 1]
+            new_key = root.get_key(keyid)
+            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+            root.revoke_key(keyid, Root.type)
+            console.print(f"Removed '{name}'")
+
+    ############################################################################
+    # Configure Online Key
+
+    console.print(Markdown("## Online Key"))
+
+    current_key = _get_online_key(root)
+    console.print(f"Current online key is: '{current_key.keyid}'")
+    if Confirm.ask("Do you want to change the online key?", default="y"):
+        while True:
+            try:
+                new_key = _load_public_key_from_file()
+
+            except (OSError, ValueError) as e:
+                console.print(f"Cannot load: {e}")
+                continue
+
+            # Disallow re-adding a key even if it is for a different role.
+            if new_key.keyid in root.keys:
+                console.print("Key already in use.")
+                continue
+
+            break
+
+        uri = f"fn:{new_key.keyid}"
+        new_key.unrecognized_fields[KEY_URI_FIELD] = uri
+        for role_name in ONLINE_ROLE_NAMES:
+            root.add_key(new_key, role_name)
+
+        console.print(f"Added online key: '{new_key.keyid}'")
+
+    ############################################################################
+    # Bump version
+    # TODO: check if metadata changed, or else abort? start over?
+    root.version += 1
+
+    ############################################################################
+    # Review Metadata
+    console.print(Markdown("## Review"))
+    metadata = Metadata(root)
+    _show(metadata.signed)
+
+    # TODO: ask to continue? or abort? or start over?
+
+    ############################################################################
+    # Sign Metadata
+    console.print(Markdown("## Sign"))
+
+    while True:
+        results = root.get_root_verification_result(
+            prev_root_md.signed,
+            metadata.signed_bytes,
+            metadata.signatures,
+        )
+        if results.verified:
+            console.print("Metadata is fully signed.")
+            break
+
+        results_to_show: list[VerificationResult] = []
+        if not results.first.verified:
+            results_to_show.append(results.first)
+
+        if not results.second.verified and (
+            (results.first.unsigned, results.first.missing)
+            != (results.second.unsigned, results.second.missing)
+        ):
+            results_to_show.append(results.second)
+
+        idx = 0
+        keys_to_use: list[Key] = []
+        for result in results_to_show:
+            console.print(
+                f"Missing {result.missing} signature(s) from any of:"
+            )
+            for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
+                name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+                console.print(f"{idx}. {name}")
+                keys_to_use.append(key)
+
+        prompt = "Please enter '<number>' to choose a signing key"
+        choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
+        default = None
+
+        # Require at least one signature to continue
+        # TODO: do not configure policy inline
+        if result.signed:
+            prompt += ", or press enter to continue"
+            default = 0
+            choices = [default] + choices
+
+        choice = IntPrompt.ask(
+            prompt,
+            choices=choices,
+            default=default,
+            show_choices=False,
+            show_default=True,
+        )
+        if choice == 0:
+            break
+        else:
+            key = keys_to_use[choice - 1]
+
+        # Sign until success
+        while True:
+            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+            try:
+                signer = _load_signer_from_file(key)
+                metadata.sign(signer, append=True)
+                console.print(f"Signed metadata with key '{name}'")
+                break
+
+            except (ValueError, OSError, UnsignedMetadataError) as e:
+                console.print(f"Cannot sign metadata with key '{name}': {e}")
