@@ -33,29 +33,34 @@ def patch_getpass(monkeypatch):
 
 # flake8: noqa
 
+
 class TestUpdate:
     def test_ceremony(self, client, monkeypatch, patch_getpass):
         """Exemplary root v1 update w/o signing (tested above) ."""
         inputs = [
-            "100", # Please enter number of days from now, when root should expire
-            "100", # Please enter number of days from now, when timestamp should expire
-            "100", # Please enter number of days from now, when snapshot should expire
-            "100", # Please enter number of days from now, when targets should expire
-            "100", # Please enter number of days from now, when bins should expire
-            "256", # Choose the number of delegated hash bin roles [2/4/8/16/32/64/128/256/512/1024/2048/4096/8192/16384] (256)
-            "https://yolo.wtf", # Please enter the targets base URL (e.g. https://www.example.com/downloads/)
-            "2", # Please enter root threshold
-            f"{_PEMS / 'rsa.pub'}", # Please enter a public key path:
-            "my rsa key", # Please enter a key name:
-            "0", # Please press '0' to add key, or enter '<number>' to remove key:
-            f"{_PEMS / 'ec.pub'}", # Please enter a public key path:
-            "my ec key", # Please enter a key name:
-            "0", # Please press '0' to add key, or enter '<number>' to remove key: Press enter to contiue:
-            f"{_PEMS / 'ed.pub'}", # Please enter a public key path:
-            "my ed key", # Please enter a key name:
-            "1", # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
-            "-1", # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
-            f"{_PEMS / 'rsa.pub'}", # Please enter a public key path:
+            "100",  # Please enter number of days from now, when root should expire
+            "100",  # Please enter number of days from now, when timestamp should expire
+            "100",  # Please enter number of days from now, when snapshot should expire
+            "100",  # Please enter number of days from now, when targets should expire
+            "100",  # Please enter number of days from now, when bins should expire
+            "256",  # Choose the number of delegated hash bin roles [2/4/8/16/32/64/128/256/512/1024/2048/4096/8192/16384] (256)
+            "https://yolo.wtf",  # Please enter the targets base URL (e.g. https://www.example.com/downloads/)
+            "2",  # Please enter root threshold
+            f"{_PEMS / 'rsa.pub'}",  # Please enter a public key path:
+            "my rsa key",  # Please enter a key name:
+            "0",  # Please press '0' to add key, or enter '<number>' to remove key:
+            f"{_PEMS / 'ec.pub'}",  # Please enter a public key path:
+            "my ec key",  # Please enter a key name:
+            "0",  # Please press '0' to add key, or enter '<number>' to remove key: Press enter to contiue:
+            f"{_PEMS / 'ed.pub'}",  # Please enter a public key path:
+            "my ed key",  # Please enter a key name:
+            "1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
+            "-1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
+            f"{_PEMS / 'rsa.pub'}",  # Please enter a public key path:
+            "2",  # Please enter '<number>' to choose a signing key
+            f"{_PEMS / 'ed'}",  # Please enter path to encrypted local private key
+            "1",  # Please enter '<number>' to choose a signing key, or press enter to continue:
+            f"{_PEMS / 'ec'}",  # Please enter path to encrypted local private key
         ]
         result = client.invoke(
             ceremony, input="\n".join(inputs), catch_exceptions=False

@@ -76,6 +76,7 @@ KEY_NAME_FIELD = "x-rstuf-key-name"
 # Use locale's appropriate date representation to display the expiry date.
 EXPIRY_FORMAT = "%x"
 
+
 class _PositiveIntPrompt(IntPrompt):
     validate_error_message = (
         "[prompt.invalid]Please enter a valid positive integer number"
@@ -114,102 +115,11 @@ def _load_signer_from_file(public_key: Key) -> Signer:
     return CryptoSigner(private_key, public_key)
 
 
-def _show_missing_signatures(results: RootVerificationResult) -> None:
-    results_to_show = [results.first]
-    # Show only one result, if the same number of signatures from the same set
-    # of keys is missing in both.
-    if (
-        results.second.unsigned != results.first.unsigned
-        or results.second.missing != results.first.missing
-    ):
-        results_to_show.append(results.second)
-
-    for result in results_to_show:
-        title = f"Please add {result.missing} more signature(s) from any of "
-        key_table = Table("ID", "Name", title=title)
-
-        for keyid, key in result.unsigned.items():
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD)
-            key_table.add_row(keyid, name)
-
-        console.print(key_table)
-
-
-def _get_missing_keys(results: RootVerificationResult) -> dict[str, Key]:
-    missing_keys = {}
-    # Use only those keys to sign, whose signatures are effectively missing.
-    # This also means the cli can't be used to sign beyond the threshold.
-    if not results.first.verified:
-        missing_keys.update(results.first.unsigned)
-
-    if not results.second.verified:
-        missing_keys.update(results.second.unsigned)
-
-    return missing_keys
-
-def _sign_multiple(
-    metadata: Metadata[Root],
-    prev_root: Optional[Root],
-) -> Optional[list[Signature]]:
-    """Prompt loop to add signatures to root.
-
-    Prints metadata for review once, and signature requirements.
-    Loops until fully signed or user exit.
-    """
-    console.print(Markdown("## Signing"))
-
-    signatures: List[Signature] = []
-    show_metadata = True
-    while True:
-        results = metadata.signed.get_root_verification_result(
-            prev_root,
-            metadata.signed_bytes,
-            metadata.signatures,
-        )
-
-        if results.verified:
-            console.print("Metadata is fully signed.")
-            return signatures
-
-        # Show metadata for review once
-        if show_metadata:
-            _show(metadata.signed)
-            show_metadata = False
-
-        _show_missing_signatures(results)
-        missing_keys = _get_missing_keys(results)
-        # Loop until signing success or user exit
-        while True:
-            if not Confirm.ask("Do you want to sign?"):
-                return signatures
-
-            signature = _sign(metadata, missing_keys)
-            if signature:
-                signatures.append(signature)
-                break
-
-
-def _sign(metadata: Metadata, keys: Dict[str, Key]) -> Optional[Signature]:
-    """Prompt for signing key and sign.
-
-    Return Signature or None, if signing fails.
-    """
-    signature = None
-    choice, key = _choose_key("sign", keys)
-    try:
-        signer = _load_signer(key)
-        signature = metadata.sign(signer, append=True)
-        console.print(f"Signed metadata with key '{choice}'")
-
-    except (ValueError, OSError, UnsignedMetadataError) as e:
-        console.print(f"Cannot sign metadata with key '{choice}': {e}")
-
-    return signature
-
 def _get_root_keys(root: Root) -> Dict[str, Key]:
     return {
         keyid: root.get_key(keyid) for keyid in root.roles[Root.type].keyids
     }
+
 
 def _get_online_key(root: Root) -> Key:
     # TODO: assert all online roles have the same and only one keyid
@@ -385,7 +295,6 @@ def ceremony() -> None:
             root.revoke_key(keyid, Root.type)
             console.print(f"Removed '{name}'")
 
-
     ############################################################################
     # Configure Online Key
     console.print(Markdown("## Online Key"))
@@ -412,7 +321,63 @@ def ceremony() -> None:
 
     console.print(f"Added online key: '{key.keyid}'")
 
-    # Sign
+    ############################################################################
+    # Review Metadata
+    console.print(Markdown("## Review"))
+
+    metadata = Metadata(root)
+    _show(metadata.signed)
+
+    # TODO: ask to continue? or abort? or start over?
+
+    ############################################################################
+    # Sign Metadata
     console.print(Markdown("## Sign"))
-    root_md = Metadata(root)
-    _sign_multiple(root_md, None)
+
+    while True:
+        result = metadata.signed.get_verification_result(
+            Root.type,
+            metadata.signed_bytes,
+            metadata.signatures,
+        )
+        if result.verified:
+            console.print("Metadata is fully signed.")
+            break
+
+        console.print(f"Missing {result.missing} signature(s) from any of:")
+        for idx, key in enumerate(result.unsigned.values(), start=1):
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+            console.print(f"{idx}. {name}")
+
+        prompt = "Please enter '<number>' to choose a signing key"
+        default = None
+
+        # Require at least one signature to continue
+        # TODO: do not configure policy inline
+        if result.signed:
+            prompt += ", or press enter to continue"
+            default = 0
+
+        choice = IntPrompt.ask(
+            prompt,
+            choices=[str(i) for i in range(len(result.unsigned) + 1)],
+            default=default,
+            show_choices=False,
+            show_default=False,
+        )
+
+        if choice == 0:
+            break
+
+        else:
+            key = list(result.unsigned.values())[choice - 1]
+
+        while True:
+            try:
+                signer = _load_signer_from_file(key)
+                metadata.sign(signer, append=True)
+                console.print(f"Signed metadata with key '{choice}'")
+                break
+
+            except (ValueError, OSError, UnsignedMetadataError) as e:
+                console.print(f"Cannot sign metadata with key '{choice}': {e}")
