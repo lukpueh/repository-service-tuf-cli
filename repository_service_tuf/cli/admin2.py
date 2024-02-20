@@ -71,8 +71,7 @@ from repository_service_tuf.helpers.api_client import URL as ROUTE
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 
 KEY_URI_FIELD = "x-rstuf-online-key-uri"
-# TODO: Consider using "x-rstuf-" prefix
-KEY_NAME_FIELD = "name"
+KEY_NAME_FIELD = "x-rstuf-key-name"
 
 # Use locale's appropriate date representation to display the expiry date.
 EXPIRY_FORMAT = "%x"
@@ -103,7 +102,7 @@ def _load_public_key_from_file() -> Key:
     return key
 
 
-def _load_signer(public_key: Key) -> Signer:
+def _load_signer_from_file(public_key: Key) -> Signer:
     """Ask for details to load signer, load and return."""
     path = Prompt.ask("Please enter path to encrypted local private key")
 
@@ -258,6 +257,8 @@ def ceremony() -> None:
 
     root = Root()
 
+    ############################################################################
+    # Configure expiration and online settings
     console.print(Markdown("##  Metadata Expiration"))
     # Prompt for expiry dates
     expiry_dates = {}
@@ -295,6 +296,8 @@ def ceremony() -> None:
     if not targets_base_url.endswith("/"):
         targets_base_url += "/"
 
+    ############################################################################
+    # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
 
@@ -306,10 +309,10 @@ def ceremony() -> None:
         # Show current signing keys
         if root_role.keyids:
             console.print("Current signing keys are:")
-            for idx, keyid in enumerate(root_role.keyids):
+            for idx, keyid in enumerate(root_role.keyids, start=1):
                 key = root.get_key(keyid)
                 name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-                console.print(f"{idx + 1}. {name}")
+                console.print(f"{idx}. {name}")
 
         # Show missing key info
         missing = max(0, threshold - len(root_role.keyids))
@@ -324,8 +327,10 @@ def ceremony() -> None:
 
         # Show prompt, or skip if the user can only add keys
         if root_role.keyids:
-            prompt = ("Please press '0' to add key, "
-                      "or enter '<number>' to remove key")
+            prompt = (
+                "Please press '0' to add key, "
+                "or enter '<number>' to remove key"
+            )
             default = None
             if not missing:
                 prompt += ". Press enter to continue"
@@ -336,7 +341,7 @@ def ceremony() -> None:
                 choices=[str(i) for i in range(-1, len(root_role.keyids) + 1)],
                 default=default,
                 show_choices=False,
-                show_default=False
+                show_default=False,
             )
 
         else:
@@ -345,7 +350,6 @@ def ceremony() -> None:
         if choice == -1:  # Continue
             break
 
-        # Add
         elif choice == 0:  # Add key
             try:
                 key = _load_public_key_from_file()
@@ -381,6 +385,9 @@ def ceremony() -> None:
             root.revoke_key(keyid, Root.type)
             console.print(f"Removed '{name}'")
 
+
+    ############################################################################
+    # Configure Online Key
     console.print(Markdown("## Online Key"))
 
     while True:
