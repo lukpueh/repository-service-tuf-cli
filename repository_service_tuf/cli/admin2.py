@@ -622,3 +622,79 @@ def update(root_in) -> None:
 
             except (ValueError, OSError, UnsignedMetadataError) as e:
                 console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+
+@admin2.command()  # type: ignore
+@click.argument("root", type=click.File("rb"))
+@click.argument("prev_root", type=click.File("rb"), required=False)
+def sign(root, prev_root) -> None:
+    """Add one signature to root metadata."""
+    console.print("\n", Markdown("# Metadata Signing Tool"))
+
+    ############################################################################
+    # Load roots
+    # TODO: load from API
+    metadata = Metadata[Root].from_bytes(root.read())
+
+    if prev_root:
+        prev_root = Metadata[Root].from_bytes(prev_root.read()).signed
+
+    results = metadata.signed.get_root_verification_result(
+        prev_root,
+        metadata.signed_bytes,
+        metadata.signatures,
+    )
+    if results.verified:
+        console.print("Metadata is fully signed.")
+        return
+
+    ############################################################################
+    # Review Metadata
+    console.print(Markdown("## Review"))
+    _show(metadata.signed)
+
+    ############################################################################
+    # Sign Metadata
+    console.print(Markdown("## Sign"))
+
+    # Only show distinct unverified results
+    # NOTE: I tried a few different things to construct `results_to_show`,
+    # including list/dict-comprehensions, map, reduce, lambda, etc.
+    # This seems the least ugly solution...
+    results_to_show: list[VerificationResult] = []
+    if not results.first.verified:
+        results_to_show.append(results.first)
+
+    if not results.second.verified and (
+        (results.first.unsigned, results.first.missing)
+        != (results.second.unsigned, results.second.missing)
+    ):
+        results_to_show.append(results.second)
+
+    idx = 0
+    keys_to_use: list[Key] = []
+    for result in results_to_show:
+        console.print(f"Missing {result.missing} signature(s) from any of:")
+        for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+            console.print(f"{idx}. {name}")
+            keys_to_use.append(key)
+
+    prompt = "Please enter '<number>' to choose a signing key"
+    choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
+    choice = IntPrompt.ask(prompt, choices=choices, show_choices=False)
+
+    key = keys_to_use[choice - 1]
+
+    # Sign until success
+    while True:
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+        try:
+            signer = _load_signer_from_file(key)
+            metadata.sign(signer, append=True)
+            # TODO: Check if the signature is valid for the key
+            console.print(f"Signed metadata with key '{name}'")
+            break
+
+        except (ValueError, OSError, UnsignedMetadataError) as e:
+            console.print(f"Cannot sign metadata with key '{name}': {e}")

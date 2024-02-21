@@ -6,7 +6,7 @@ from click.testing import CliRunner
 from tuf.api.metadata import Metadata, Root
 
 import repository_service_tuf.cli.admin2 as admin2
-from repository_service_tuf.cli.admin2 import ceremony, update
+from repository_service_tuf.cli.admin2 import ceremony, sign, update
 
 _FILES = Path(__file__).parent.parent.parent / "files"
 _ROOTS = _FILES / "root"
@@ -88,6 +88,19 @@ class TestAdmin2:
         result = client.invoke(
             update,
             args=[f"{_ROOTS / 'v1.json'}"],
+            input="\n".join(inputs),
+            catch_exceptions=False,
+        )
+        print(result.output)
+
+    def test_sign(self, client, patch_getpass):
+        inputs = [
+            "4",  # Please enter '<number>' to choose a signing key:
+            "tests/files/pem/rsa",  # Please enter path to encrypted local private key:
+        ]
+        result = client.invoke(
+            sign,
+            args=[f"{_ROOTS / 'v2.json'}", f"{_ROOTS / 'v1.json'}"],
             input="\n".join(inputs),
             catch_exceptions=False,
         )
