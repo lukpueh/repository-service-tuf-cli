@@ -225,27 +225,29 @@ def ceremony() -> None:
                 f"Threshold {threshold} met, more keys can be added."
             )
 
-        # Show prompt, or skip if the user can only add keys
-        if root_role.keyids:
+        # Skip prompt, if user must add key
+        if not root_role.keyids:
+            choice = 0
+
+        else:
             prompt = (
                 "Please press '0' to add key, "
                 "or enter '<number>' to remove key"
             )
-            default = None
+            choices = [str(i) for i in range(len(root_role.keyids) + 1)]
+            default = ...  # no default
+
             if not missing:
                 prompt += ". Press enter to continue"
                 default = -1
 
             choice = IntPrompt.ask(
                 prompt,
-                choices=[str(i) for i in range(-1, len(root_role.keyids) + 1)],
+                choices=choices,
                 default=default,
                 show_choices=False,
                 show_default=False,
             )
-
-        else:
-            choice = 0
 
         if choice == -1:  # Continue
             break
@@ -340,26 +342,27 @@ def ceremony() -> None:
             console.print(f"{idx}. {name}")
 
         prompt = "Please enter '<number>' to choose a signing key"
-        default = None
+        choices = [str(i) for i in range(1, len(result.unsigned) + 1)]
+        default = ...  # no default
 
         # Require at least one signature to continue
-        # TODO: do not configure policy inline
+        # TODO: do not configure this policy inline
         if result.signed:
             prompt += ", or press enter to continue"
-            default = 0
+            default = -1
 
         choice = IntPrompt.ask(
             prompt,
-            choices=[str(i) for i in range(len(result.unsigned) + 1)],
+            choices=choices,
             default=default,
             show_choices=False,
             show_default=False,
         )
 
-        if choice == 0:
+        if choice == -1:  # Continue
             break
 
-        else:
+        else:  # Get signing key
             key = list(result.unsigned.values())[choice - 1]
 
         while True:
@@ -394,14 +397,16 @@ def update(root_in) -> None:
     console.print(Markdown("## Root Expiration"))
 
     expired = root.is_expired()
-    console.print(f"Root expire{'d' if expired else 's'} "
-                  f"on {root.expires:{EXPIRY_FORMAT}}")
+    console.print(
+        f"Root expire{'d' if expired else 's'} "
+        f"on {root.expires:{EXPIRY_FORMAT}}"
+    )
 
-    if expired or Confirm.ask("Do you want to change the expiry date?",
-                              default="y"):
+    if expired or Confirm.ask(
+        "Do you want to change the expiry date?", default="y"
+    ):
         days = _PositiveIntPrompt.ask(
-            "Please enter number of days from now, "
-            "when root should expire",
+            "Please enter number of days from now, " "when root should expire",
             default=100,  # TODO: use per-role constants as default
         )
         expiry_date = datetime.utcnow() + timedelta(days=days)
@@ -439,27 +444,29 @@ def update(root_in) -> None:
                 f"Threshold {root_role.threshold} met, more keys can be added."
             )
 
-        # Show prompt, or skip if the user can only add keys
-        if root_role.keyids:
+        # Skip prompt, if user must add key
+        if not root_role.keyids:
+            choice = 0
+
+        else:
             prompt = (
                 "Please press '0' to add key, "
                 "or enter '<number>' to remove key"
             )
-            default = None
+            choices = [str(i) for i in range(len(root_role.keyids) + 1)]
+            default = ...  # no default
+
             if not missing:
                 prompt += ". Press enter to continue"
                 default = -1
 
             choice = IntPrompt.ask(
                 prompt,
-                choices=[str(i) for i in range(-1, len(root_role.keyids) + 1)],
+                choices=choices,
                 default=default,
                 show_choices=False,
                 show_default=False,
             )
-
-        else:
-            choice = 0
 
         if choice == -1:  # Continue
             break
@@ -579,25 +586,25 @@ def update(root_in) -> None:
 
         prompt = "Please enter '<number>' to choose a signing key"
         choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
-        default = None
+        default = ...  # no default
 
         # Require at least one signature to continue
-        # TODO: do not configure policy inline
+        # TODO: do not configure this policy inline
         if result.signed:
             prompt += ", or press enter to continue"
-            default = 0
-            choices = [default] + choices
+            default = -1
 
         choice = IntPrompt.ask(
             prompt,
             choices=choices,
             default=default,
             show_choices=False,
-            show_default=True,
+            show_default=False,
         )
-        if choice == 0:
+        if choice == -1:  # Continue
             break
-        else:
+
+        else:  # Get signing key
             key = keys_to_use[choice - 1]
 
         # Sign until success

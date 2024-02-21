@@ -55,7 +55,7 @@ class TestUpdate:
             f"{_PEMS / 'ed.pub'}",  # Please enter a public key path:
             "my ed key",  # Please enter a key name:
             "1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
-            "-1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
+            "",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to contiue:
             f"{_PEMS / 'rsa.pub'}",  # Please enter a public key path:
             "2",  # Please enter '<number>' to choose a signing key
             f"{_PEMS / 'ed'}",  # Please enter path to encrypted local private key
