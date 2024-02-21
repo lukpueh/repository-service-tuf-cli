@@ -401,7 +401,7 @@ def update(root_in) -> None:
                               default="y"):
         days = _PositiveIntPrompt.ask(
             "Please enter number of days from now, "
-            f"when root should expire",
+            "when root should expire",
             default=100,  # TODO: use per-role constants as default
         )
         expiry_date = datetime.utcnow() + timedelta(days=days)
