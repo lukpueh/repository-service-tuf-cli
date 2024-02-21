@@ -563,7 +563,6 @@ def update(root_in) -> None:
             console.print("Metadata is fully signed.")
             break
 
-
         # Only show distinct unverified results
         # NOTE: I tried a few different things to construct `results_to_show`,
         # including list/dict-comprehensions, map, reduce, lambda, etc.
@@ -577,7 +576,6 @@ def update(root_in) -> None:
             != (results.second.unsigned, results.second.missing)
         ):
             results_to_show.append(results.second)
-
 
         idx = 0
         keys_to_use: list[Key] = []

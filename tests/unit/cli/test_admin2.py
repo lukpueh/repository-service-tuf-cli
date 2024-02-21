@@ -6,7 +6,7 @@ from click.testing import CliRunner
 from tuf.api.metadata import Metadata, Root
 
 import repository_service_tuf.cli.admin2 as admin2
-from repository_service_tuf.cli.admin2 import ceremony
+from repository_service_tuf.cli.admin2 import ceremony, update
 
 _FILES = Path(__file__).parent.parent.parent / "files"
 _ROOTS = _FILES / "root"
@@ -34,9 +34,8 @@ def patch_getpass(monkeypatch):
 # flake8: noqa
 
 
-class TestUpdate:
-    def test_ceremony(self, client, monkeypatch, patch_getpass):
-        """Exemplary root v1 update w/o signing (tested above) ."""
+class TestAdmin2:
+    def test_ceremony(self, client, patch_getpass):
         inputs = [
             "100",  # Please enter number of days from now, when root should expire
             "100",  # Please enter number of days from now, when timestamp should expire
@@ -64,5 +63,32 @@ class TestUpdate:
         ]
         result = client.invoke(
             ceremony, input="\n".join(inputs), catch_exceptions=False
+        )
+        print(result.output)
+
+    def test_update(self, client, patch_getpass):
+        inputs = [
+            "365",  # Please enter number of days from now, when root should expire (100)
+            "y",  # Do you want to change the root threshold? [y/n] (y)
+            "1",  # Please enter root threshold
+            "2",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue
+            "1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue
+            "tests/files/pem/rsa.pub",  # Please enter a public key path
+            "rsa root key",  # Please enter a key name
+            "",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue:
+            "y",  # Do you want to change the online key? [y/n] (y)
+            "tests/files/pem/ec.pub",  # Please enter a public key path
+            "1",  # Please enter '<number>' to choose a signing key
+            "tests/files/pem/ed",  # Please enter path to encrypted local private key
+            "1",  # Please enter '<number>' to choose a signing key
+            "tests/files/pem/ec",  # Please enter path to encrypted local private key
+            "1",  # Please enter '<number>' to choose a signing key
+            "tests/files/pem/rsa",  # Please enter path to encrypted local private key
+        ]
+        result = client.invoke(
+            update,
+            args=[f"{_ROOTS / 'v1.json'}"],
+            input="\n".join(inputs),
+            catch_exceptions=False,
         )
         print(result.output)
