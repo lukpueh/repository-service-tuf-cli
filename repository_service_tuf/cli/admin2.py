@@ -363,7 +363,7 @@ def ceremony() -> None:
             key = list(result.unsigned.values())[choice - 1]
 
         while True:
-            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
             try:
                 signer = _load_signer_from_file(key)
                 metadata.sign(signer, append=True)
