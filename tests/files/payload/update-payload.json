@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "root": {
+      "signatures": [
+        {
+          "keyid": "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc",
+          "sig": "949db0c4fab594ebf5881656fcb57b703c4b24d87d787b61e18c898493c5bbb3ca5ffc9af439ce42e9c510bfa5b55dc0ed45e3443ce69e2c3331a7d5a1a3a90a"
+        },
+        {
+          "keyid": "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3",
+          "sig": "3045022100889a4750858b84661efe73a72f2deb72a681e20d7fadb78b9ded193d1b487b8a02205009ed9490dd46a408147aa68fa8b1b2291fbd3235aa08037f9408ec633b770e"
+        },
+        {
+          "keyid": "2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241",
+          "sig": "ae90107c33a9d6e3704a5266ba7ae4e87bec6de9a7028b641a73a4ce28ee942df5e7e9fb743b447dcbd8b3157c5f6cbeb2f7d996bf9b670d2cdcde21f67513419d6d93c264d2a77e49f55229c897193ec7d92bb5ed9182a7a5ee8970ce4aa63edfa5cf0a91f5d9bff60f2bd6adb3b5ad05045f4b85b291072f356da0271674809c1d376293c44942ac41ba0618e569b2b5972ef897243fc3bb3d3fe6ad10ef105f5442c7f7031a7857e62ed2c510d205d14cc129176bd68ea030ec63aebe8e0d77ef5772a557f78a53bbff751d3b75edefc61d71e65abf9789d526dd63f221021b05a1444aa722b44260204da32e60009e78b818723f4add15d53d3ab2d78338"
+        }
+      ],
+      "signed": {
+        "_type": "root",
+        "version": 2,
+        "spec_version": "1.0.31",
+        "expires": "2025-02-21T13:44:08Z",
+        "consistent_snapshot": true,
+        "keys": {
+          "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc": {
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {
+              "public": "4f66dabebcf30628963786001984c0b75c175cdcf3bc4855933a2628f0cd0a0f"
+            }
+          },
+          "2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241": {
+            "keytype": "rsa",
+            "scheme": "rsassa-pss-sha256",
+            "keyval": {
+              "public": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwhX6rioiL/cX5Ys32InF\nU52H8tL14QeX0tacZdb+AwcH6nIh97h3RSHvGD7Xy6uaMRmGldAnSVYwJHqoJ5j2\nynVzU/RFpr+6n8Ps0QFg5GmlEqZboFjLbS0bsRQcXXnqJNsVLEPT3ULvu1rFRbWz\nAMFjNtNNk5W/u0GEzXn3D03jIdhD8IKAdrTRf0VMD9TRCXLdMmEU2vkf1NVUnOTb\n/dRX5QA8TtBylVnouZknbavQ0J/pPlHLfxUgsKzodwDlJmbPG9BWwXqQCmP0DgOG\nNIZ1X281MOBaGbkNVEuntNjCSaQxQjfALVVU5NAfal2cwMINtqaoc7Wa+TWvpFEI\nWwIDAQAB\n-----END PUBLIC KEY-----\n"
+            },
+            "x-rstuf-key-name": "rsa root key"
+          },
+          "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3": {
+            "keytype": "ecdsa",
+            "scheme": "ecdsa-sha2-nistp256",
+            "keyval": {
+              "public": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcLYSZyFGeKdWNt5dWFbnv6N9NyHC\noUNLcG6GZIxLwN8Q8MUdHdOOxGkDnyBRSJpIZ/r/oDECSTwfCYhdogweLA==\n-----END PUBLIC KEY-----\n"
+            },
+            "x-rstuf-online-key-uri": "fn:50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3"
+          }
+        },
+        "roles": {
+          "root": {
+            "keyids": [
+              "2f685fa7546f1856b123223ab086b3def14c89d24eef18f49c32508c2f60e241"
+            ],
+            "threshold": 1
+          },
+          "snapshot": {
+            "keyids": [
+              "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc",
+              "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3"
+            ],
+            "threshold": 1
+          },
+          "targets": {
+            "keyids": [
+              "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc",
+              "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3"
+            ],
+            "threshold": 1
+          },
+          "timestamp": {
+            "keyids": [
+              "c6d8bf2e4f48b41ac2ce8eca21415ca8ef68c133b47fc33df03d4070a7e1e9cc",
+              "50d7e110ad65f3b2dba5c3cfc8c5ca259be9774cc26be3410044ffd4be3aa5f3"
+            ],
+            "threshold": 1
+          }
+        }
+      }
+    }
+  }
+}
