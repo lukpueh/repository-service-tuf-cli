@@ -11,8 +11,10 @@ Goals
 
 """
 
+import json
 import time
 from copy import deepcopy
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -65,6 +67,39 @@ KEY_NAME_FIELD = "x-rstuf-key-name"
 
 # Use locale's appropriate date representation to display the expiry date.
 EXPIRY_FORMAT = "%x"
+
+
+@dataclass
+class CeremonyPayload:
+    settings: "Settings"
+    metadata: "Metadatas"
+
+
+@dataclass
+class Metadatas:  # accept bad spelling to disambiguate with Metadata
+    root: dict[str, Any]
+
+
+@dataclass
+class Settings:
+    expiration: "ExpirationSettings"
+    services: "ServiceSettings"
+
+
+@dataclass
+class ExpirationSettings:
+    root: int = 365
+    targets: int = 365
+    snapshot: int = 1
+    timestamp: int = 1
+    bins: int = 1
+
+
+@dataclass
+class ServiceSettings:
+    number_of_delegated_bins: int = 256
+    targets_base_url: str = None
+    targets_online_key: bool = True
 
 
 class _PositiveIntPrompt(IntPrompt):
@@ -148,7 +183,15 @@ def admin2():
 
 
 @admin2.command()  # type: ignore
-def ceremony() -> None:
+@click.option(
+    "--output",
+    "-o",
+    is_flag=False,
+    flag_value="payload.json",
+    help="Write json result to FILENAME (default: 'payload.json')",
+    type=click.File("w"),
+)
+def ceremony(output) -> None:
     """Bootstrap Ceremony to create initial root metadata and RSTUF config.
 
     Will ask for public key paths and signing key paths.
@@ -161,33 +204,33 @@ def ceremony() -> None:
     # Configure expiration and online settings
     console.print(Markdown("##  Metadata Expiration"))
     # Prompt for expiry dates
-    expiry_dates = {}
+    expiration_settings = ExpirationSettings()
     for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
         days = _PositiveIntPrompt.ask(
             "Please enter number of days from now, "
             f"when {role} should expire",
-            default=100,  # TODO: use per-role constants as default
+            default=getattr(expiration_settings, role),
         )
+        setattr(expiration_settings, role, days)
+
         expiry_date = datetime.utcnow() + timedelta(days=days)
         console.print(f"{role} expires on {expiry_date:{EXPIRY_FORMAT}}")
-        expiry_dates[role] = expiry_date
-
-    # Set root expiration
-    root.expires = expiry_dates["root"]
-    # TODO: include other dates in payload
+        if role == "root":
+            root.expires = expiry_date
 
     console.print(Markdown("## Artifacts"))
 
-    # TODO: include in payload
+    service_settings = ServiceSettings()
     number_of_bins = IntPrompt.ask(
         "Choose the number of delegated hash bin roles",
-        default=256,  # TODO: use constant as default
+        default=service_settings.number_of_delegated_bins,
         choices=[str(2**i) for i in range(1, 15)],
         show_default=True,
         show_choices=True,
     )
 
-    # TODO: include in payload
+    service_settings.number_of_delegated_bins = number_of_bins
+
     # TODO: validate url
     targets_base_url = Prompt.ask(
         "Please enter the targets base URL "
@@ -195,6 +238,8 @@ def ceremony() -> None:
     )
     if not targets_base_url.endswith("/"):
         targets_base_url += "/"
+
+    service_settings.targets_base_url = targets_base_url
 
     ############################################################################
     # Configure Root Keys
@@ -375,6 +420,12 @@ def ceremony() -> None:
 
             except (ValueError, OSError, UnsignedMetadataError) as e:
                 console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+    metadatas = Metadatas(metadata.to_dict())
+    settings = Settings(expiration_settings, service_settings)
+    payload = CeremonyPayload(settings, metadatas)
+    if output:
+        json.dump(asdict(payload), output, indent=2)
 
 
 @admin2.command()  # type: ignore
