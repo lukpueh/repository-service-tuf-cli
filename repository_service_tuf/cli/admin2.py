@@ -102,6 +102,17 @@ class ServiceSettings:
     targets_online_key: bool = True
 
 
+@dataclass
+class UpdatePayload:
+    metadata: "Metadatas"
+
+
+@dataclass
+class SignPayload:
+    role: str = "root"
+    signature: dict[str, str] = None
+
+
 class _PositiveIntPrompt(IntPrompt):
     validate_error_message = (
         "[prompt.invalid]Please enter a valid positive integer number"
@@ -187,8 +198,8 @@ def admin2():
     "--output",
     "-o",
     is_flag=False,
-    flag_value="payload.json",
-    help="Write json result to FILENAME (default: 'payload.json')",
+    flag_value="ceremony-payload.json",
+    help="Write json result to FILENAME (default: 'ceremony-payload.json')",
     type=click.File("w"),
 )
 def ceremony(output) -> None:
@@ -430,7 +441,15 @@ def ceremony(output) -> None:
 
 @admin2.command()  # type: ignore
 @click.argument("root_in", type=click.File("rb"))
-def update(root_in) -> None:
+@click.option(
+    "--output",
+    "-o",
+    is_flag=False,
+    flag_value="update-payload.json",
+    help="Write json result to FILENAME (default: 'update-payload.json')",
+    type=click.File("w"),
+)
+def update(root_in, output) -> None:
     """Update root metadata and bump version.
 
     Will ask for root metadata, public key paths, and signing key paths.
@@ -674,11 +693,23 @@ def update(root_in) -> None:
             except (ValueError, OSError, UnsignedMetadataError) as e:
                 console.print(f"Cannot sign metadata with key '{name}': {e}")
 
+    payload = UpdatePayload(Metadatas(metadata.to_dict()))
+    if output:
+        json.dump(asdict(payload), output, indent=2)
+
 
 @admin2.command()  # type: ignore
 @click.argument("root", type=click.File("rb"))
 @click.argument("prev_root", type=click.File("rb"), required=False)
-def sign(root, prev_root) -> None:
+@click.option(
+    "--output",
+    "-o",
+    is_flag=False,
+    flag_value="sign-payload.json",
+    help="Write json result to FILENAME (default: 'sign-payload.json')",
+    type=click.File("w"),
+)
+def sign(root, prev_root, output) -> None:
     """Add one signature to root metadata."""
     console.print("\n", Markdown("# Metadata Signing Tool"))
 
@@ -742,10 +773,14 @@ def sign(root, prev_root) -> None:
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
         try:
             signer = _load_signer_from_file(key)
-            metadata.sign(signer, append=True)
+            signature = metadata.sign(signer, append=True)
             # TODO: Check if the signature is valid for the key
             console.print(f"Signed metadata with key '{name}'")
             break
 
         except (ValueError, OSError, UnsignedMetadataError) as e:
             console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+    payload = SignPayload(signature=signature.to_dict())
+    if output:
+        json.dump(asdict(payload), output, indent=2)
