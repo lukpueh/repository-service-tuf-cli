@@ -45,13 +45,13 @@ def update(root_in, output) -> None:
     """
     console.print("\n", Markdown("# Metadata Update Tool"))
 
-    ############################################################################
+    ###########################################################################
     # Load root
     # TODO: load from API
     prev_root_md = Metadata[Root].from_bytes(root_in.read())
     root = deepcopy(prev_root_md.signed)
 
-    ############################################################################
+    ###########################################################################
     # Configure expiration
     console.print(Markdown("## Root Expiration"))
 
@@ -67,7 +67,7 @@ def update(root_in, output) -> None:
         _, date = _collect_expiry("root")
         root.expires = date
 
-    ############################################################################
+    ###########################################################################
     # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
@@ -81,18 +81,18 @@ def update(root_in, output) -> None:
 
     _configure_root_keys(root)
 
-    ############################################################################
+    ###########################################################################
     # Configure Online Key
 
     console.print(Markdown("## Online Key"))
     _configure_online_key(root)
 
-    ############################################################################
+    ###########################################################################
     # Bump version
     # TODO: check if metadata changed, or else abort? start over?
     root.version += 1
 
-    ############################################################################
+    ###########################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
 
@@ -101,7 +101,7 @@ def update(root_in, output) -> None:
 
     # TODO: ask to continue? or abort? or start over?
 
-    ############################################################################
+    ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
     _add_root_signatures(metadata, prev_root_md.signed)

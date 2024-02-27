@@ -38,7 +38,7 @@ def sign(root, prev_root, output) -> None:
     """Add one signature to root metadata."""
     console.print("\n", Markdown("# Metadata Signing Tool"))
 
-    ############################################################################
+    ###########################################################################
     # Load roots
     # TODO: load from API
     metadata = Metadata[Root].from_bytes(root.read())
@@ -55,12 +55,12 @@ def sign(root, prev_root, output) -> None:
         console.print("Metadata is fully signed.")
         return
 
-    ############################################################################
+    ###########################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
     _show(metadata.signed)
 
-    ############################################################################
+    ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
     results = _filter_root_verification_results(root_result)

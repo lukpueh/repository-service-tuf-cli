@@ -15,11 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
-import click
-
 # Magic import to unbreak `load_pem_private_key` - pyca/cryptography#10315
 import cryptography.hazmat.backends.openssl.backend  # noqa: F401
-from click import ClickException
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
@@ -220,14 +217,15 @@ def _configure_root_keys(root: Root) -> None:
                 console.print(f"{idx}. {name}")
 
         # Show missing key info
-        missing = max(0, root_role.threshold - len(root_role.keyids))
+        threshold = root_role.threshold
+        missing = max(0, threshold - len(root_role.keyids))
         if missing:
             console.print(
-                f"{missing} more key(s) needed to meet threshold {root_role.threshold}"
+                f"{missing} more key(s) needed for threshold {threshold}"
             )
         else:
             console.print(
-                f"Threshold {root_role.threshold} met, more keys can be added."
+                f"Threshold {threshold} met, more keys can be added."
             )
 
         # Skip prompt, if user must add key
@@ -333,7 +331,8 @@ def _configure_online_key(root: Root) -> None:
 def _filter_root_verification_results(
     root_result: RootVerificationResult,
 ) -> list[VerificationResult]:
-    """Filter unverified results with distinct 'missing' and 'unsigned' fields."""
+    """Filter unverified distinct results."""
+
     # NOTE: Tried a few different things to construct `results`,
     # including list/dict-comprehensions, map, reduce, lambda, etc.
     # This seems the least ugly solution...

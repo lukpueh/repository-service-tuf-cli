@@ -47,7 +47,7 @@ def ceremony(output) -> None:
 
     root = Root()
 
-    ############################################################################
+    ###########################################################################
     # Configure expiration and online settings
     console.print(Markdown("##  Metadata Expiration"))
     # Prompt for expiry dates
@@ -81,7 +81,7 @@ def ceremony(output) -> None:
 
     service_settings.targets_base_url = targets_base_url
 
-    ############################################################################
+    ###########################################################################
     # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
@@ -92,19 +92,19 @@ def ceremony(output) -> None:
 
     _configure_root_keys(root)
 
-    ############################################################################
+    ###########################################################################
     # Configure Online Key
     console.print(Markdown("## Online Key"))
     _configure_online_key(root)
 
-    ############################################################################
+    ###########################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
     _show(root)
 
     # TODO: ask to continue? or abort? or start over?
 
-    ############################################################################
+    ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
     metadata = Metadata(root)
