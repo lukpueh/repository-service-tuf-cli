@@ -193,6 +193,22 @@ def _collect_expiry(role: str) -> Tuple[int, datetime]:
     return days, date
 
 
+def _load_key(root) -> Optional[Key]:
+    try:
+        key = _load_public_key_from_file()
+
+    except (OSError, ValueError) as e:
+        console.print(f"Cannot load: {e}")
+        return None
+
+    # Disallow re-adding a key even if it is for a different role.
+    if key.keyid in root.keys:
+        console.print("Key already in use.")
+        return None
+
+    return key
+
+
 def _configure_root_keys(root: Root) -> None:
     """Prompt dialog to add or remove root key in passed root, until user exit.
 
@@ -256,14 +272,10 @@ def _configure_root_keys(root: Root) -> None:
             break
 
         elif choice == 0:  # Add key
-            try:
-                new_key = _load_public_key_from_file()
-            except (OSError, ValueError) as e:
-                console.print(f"Cannot load: {e}")
-                continue
 
-            if new_key.keyid in root.keys:
-                console.print("Key already in use.")
+            new_key = _load_key(root)
+
+            if not new_key:
                 continue
 
             while True:
@@ -304,19 +316,8 @@ def _configure_online_key(root: Root) -> None:
             return
 
     while True:
-        try:
-            new_key = _load_public_key_from_file()
-
-        except (OSError, ValueError) as e:
-            console.print(f"Cannot load: {e}")
-            continue
-
-        # Disallow re-adding a key even if it is for a different role.
-        if new_key.keyid in root.keys:
-            console.print("Key already in use.")
-            continue
-
-        break
+        if new_key := _load_key(root):
+            break
 
     uri = f"fn:{new_key.keyid}"
     new_key.unrecognized_fields[KEY_URI_FIELD] = uri
