@@ -16,8 +16,8 @@ from repository_service_tuf.cli.admin2 import admin2
 from repository_service_tuf.cli.admin2.helpers import (
     SignPayload,
     _add_signature,
-    _choose_signing_key,
-    _filter_and_print_signing_keys,
+    _choose_key_for_signing,
+    _filter_and_print_keys_for_signing,
     _filter_root_verification_results,
     _show,
 )
@@ -64,8 +64,8 @@ def sign(root, prev_root, output) -> None:
     # Sign Metadata
     console.print(Markdown("## Sign"))
     results = _filter_root_verification_results(root_result)
-    keys = _filter_and_print_signing_keys(results)
-    key = _choose_signing_key(keys, allow_skip=False)
+    keys = _filter_and_print_keys_for_signing(results)
+    key = _choose_key_for_signing(keys, allow_skip=False)
     signature = _add_signature(metadata, key)
 
     payload = SignPayload(signature=signature.to_dict())

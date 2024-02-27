@@ -350,7 +350,7 @@ def _filter_root_verification_results(
     return results
 
 
-def _filter_and_print_signing_keys(
+def _filter_and_print_keys_for_signing(
     results: list[VerificationResult],
 ) -> list[Key]:
     keys: list[Key] = []
@@ -365,7 +365,7 @@ def _filter_and_print_signing_keys(
     return keys
 
 
-def _choose_signing_key(keys: list[Key], allow_skip) -> Optional[Key]:
+def _choose_key_for_signing(keys: list[Key], allow_skip) -> Optional[Key]:
     prompt = "Please enter '<number>' to choose a signing key"
     choices = [str(i) for i in range(1, len(keys) + 1)]
     default = ...  # no default
@@ -422,10 +422,10 @@ def _add_root_signatures(
             break
 
         results = _filter_root_verification_results(root_result)
-        keys = _filter_and_print_signing_keys(results)
+        keys = _filter_and_print_keys_for_signing(results)
 
         allow_skip = bool(root_result.signed)
-        key = _choose_signing_key(keys, allow_skip)
+        key = _choose_key_for_signing(keys, allow_skip)
 
         if not key:
             break
