@@ -200,6 +200,105 @@ def _collect_expiry(role: str) -> Tuple[int, datetime]:
     return days, date
 
 
+def _configure_root_keys(root: Root) -> None:
+    """Prompt dialog to add or remove root key in passed root, until user exit.
+
+    - Print if and how many root keys are missing to meet the threshold
+    - Print current root keys
+    - Prompt for user choice to add or remove key, or to continue (exit)
+        - "continue" choice is only available, if threshold is met
+        - "remove" choice is only available, if keys exist
+        - "add" choice is only shown, if "remove" or "exit" is also available,
+          otherwise, we branch right into "add" dialog
+
+    """
+
+    root_role = root.get_delegated_role(Root.type)
+    while True:
+        # Show current signing keys
+        if root_role.keyids:
+            console.print("Current signing keys are:")
+            for idx, keyid in enumerate(root_role.keyids, start=1):
+                new_key = root.get_key(keyid)
+                name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+                console.print(f"{idx}. {name}")
+
+        # Show missing key info
+        missing = max(0, root_role.threshold - len(root_role.keyids))
+        if missing:
+            console.print(
+                f"{missing} more key(s) needed to meet threshold {root_role.threshold}"
+            )
+        else:
+            console.print(
+                f"Threshold {root_role.threshold} met, more keys can be added."
+            )
+
+        # Skip prompt, if user must add key
+        if not root_role.keyids:
+            choice = 0
+
+        else:
+            prompt = (
+                "Please press '0' to add key, "
+                "or enter '<number>' to remove key"
+            )
+            choices = [str(i) for i in range(len(root_role.keyids) + 1)]
+            default = ...  # no default
+
+            if not missing:
+                prompt += ". Press enter to continue"
+                default = -1
+
+            choice = IntPrompt.ask(
+                prompt,
+                choices=choices,
+                default=default,
+                show_choices=False,
+                show_default=False,
+            )
+
+        if choice == -1:  # Continue
+            break
+
+        elif choice == 0:  # Add key
+            try:
+                new_key = _load_public_key_from_file()
+            except (OSError, ValueError) as e:
+                console.print(f"Cannot load: {e}")
+                continue
+
+            if new_key.keyid in root.keys:
+                console.print("Key already in use.")
+                continue
+
+            while True:
+                name = Prompt.ask("Please enter a key name")
+                if not name:
+                    console.print("Key name cannot be empty.")
+                    continue
+
+                if name in [
+                    k.unrecognized_fields.get(KEY_NAME_FIELD)
+                    for k in root.keys.values()
+                ]:
+                    console.print("Key name already in use.")
+                    continue
+
+                break
+
+            new_key.unrecognized_fields[KEY_NAME_FIELD] = name
+            root.add_key(new_key, Root.type)
+            console.print(f"Added root key '{name}'")
+
+        else:  # Remove key
+            keyid = root_role.keyids[choice - 1]
+            new_key = root.get_key(keyid)
+            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+            root.revoke_key(keyid, Root.type)
+            console.print(f"Removed '{name}'")
+
+
 @rstuf.group()  # type: ignore
 def admin2():
     """POC: alternative admin interface"""
@@ -266,87 +365,7 @@ def ceremony(output) -> None:
     threshold = _PositiveIntPrompt.ask("Please enter root threshold")
     root_role.threshold = threshold
 
-    while True:
-        # Show current signing keys
-        if root_role.keyids:
-            console.print("Current signing keys are:")
-            for idx, keyid in enumerate(root_role.keyids, start=1):
-                key = root.get_key(keyid)
-                name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-                console.print(f"{idx}. {name}")
-
-        # Show missing key info
-        missing = max(0, threshold - len(root_role.keyids))
-        if missing:
-            console.print(
-                f"{missing} more key(s) needed to meet threshold {threshold}"
-            )
-        else:
-            console.print(
-                f"Threshold {threshold} met, more keys can be added."
-            )
-
-        # Skip prompt, if user must add key
-        if not root_role.keyids:
-            choice = 0
-
-        else:
-            prompt = (
-                "Please press '0' to add key, "
-                "or enter '<number>' to remove key"
-            )
-            choices = [str(i) for i in range(len(root_role.keyids) + 1)]
-            default = ...  # no default
-
-            if not missing:
-                prompt += ". Press enter to continue"
-                default = -1
-
-            choice = IntPrompt.ask(
-                prompt,
-                choices=choices,
-                default=default,
-                show_choices=False,
-                show_default=False,
-            )
-
-        if choice == -1:  # Continue
-            break
-
-        elif choice == 0:  # Add key
-            try:
-                key = _load_public_key_from_file()
-            except (OSError, ValueError) as e:
-                console.print(f"Cannot load: {e}")
-                continue
-
-            if key.keyid in root.keys:
-                console.print("Key already in use.")
-                continue
-
-            while True:
-                name = Prompt.ask("Please enter a key name")
-                if not name:
-                    console.print("Key name cannot be empty.")
-                    continue
-                if name in [
-                    k.unrecognized_fields.get(KEY_NAME_FIELD)
-                    for k in root.keys.values()
-                ]:
-                    console.print("Key name already in use.")
-                    continue
-                break
-
-            key.unrecognized_fields[KEY_NAME_FIELD] = name
-            root.add_key(key, Root.type)
-            console.print(f"Added root key '{name}'")
-
-        else:  # Remove key
-            keyid = root_role.keyids[choice - 1]
-            key = root.get_key(keyid)
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-            root.revoke_key(keyid, Root.type)
-            console.print(f"Removed '{name}'")
+    _configure_root_keys(root)
 
     ############################################################################
     # Configure Online Key
@@ -494,87 +513,7 @@ def update(root_in, output) -> None:
         console.print(f"New root threshold is {threshold}")
         root_role.threshold = threshold
 
-    while True:
-        # Show current signing keys
-        if root_role.keyids:
-            console.print("Current signing keys are:")
-            for idx, keyid in enumerate(root_role.keyids, start=1):
-                new_key = root.get_key(keyid)
-                name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-                console.print(f"{idx}. {name}")
-
-        # Show missing key info
-        missing = max(0, root_role.threshold - len(root_role.keyids))
-        if missing:
-            console.print(
-                f"{missing} more key(s) needed to meet threshold {root_role.threshold}"
-            )
-        else:
-            console.print(
-                f"Threshold {root_role.threshold} met, more keys can be added."
-            )
-
-        # Skip prompt, if user must add key
-        if not root_role.keyids:
-            choice = 0
-
-        else:
-            prompt = (
-                "Please press '0' to add key, "
-                "or enter '<number>' to remove key"
-            )
-            choices = [str(i) for i in range(len(root_role.keyids) + 1)]
-            default = ...  # no default
-
-            if not missing:
-                prompt += ". Press enter to continue"
-                default = -1
-
-            choice = IntPrompt.ask(
-                prompt,
-                choices=choices,
-                default=default,
-                show_choices=False,
-                show_default=False,
-            )
-
-        if choice == -1:  # Continue
-            break
-
-        elif choice == 0:  # Add key
-            try:
-                new_key = _load_public_key_from_file()
-            except (OSError, ValueError) as e:
-                console.print(f"Cannot load: {e}")
-                continue
-
-            if new_key.keyid in root.keys:
-                console.print("Key already in use.")
-                continue
-
-            while True:
-                name = Prompt.ask("Please enter a key name")
-                if not name:
-                    console.print("Key name cannot be empty.")
-                    continue
-                if name in [
-                    k.unrecognized_fields.get(KEY_NAME_FIELD)
-                    for k in root.keys.values()
-                ]:
-                    console.print("Key name already in use.")
-                    continue
-                break
-
-            new_key.unrecognized_fields[KEY_NAME_FIELD] = name
-            root.add_key(new_key, Root.type)
-            console.print(f"Added root key '{name}'")
-
-        else:  # Remove key
-            keyid = root_role.keyids[choice - 1]
-            new_key = root.get_key(keyid)
-            name = new_key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-            root.revoke_key(keyid, Root.type)
-            console.print(f"Removed '{name}'")
+    _configure_root_keys(root)
 
     ############################################################################
     # Configure Online Key
