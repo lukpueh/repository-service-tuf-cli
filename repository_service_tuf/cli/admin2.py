@@ -157,9 +157,13 @@ def _get_root_keys(root: Root) -> Dict[str, Key]:
     }
 
 
-def _get_online_key(root: Root) -> Key:
-    # TODO: assert all online roles have the same and only one keyid
-    return root.get_key(root.roles[Timestamp.type].keyids[0])
+def _get_online_key(root: Root) -> Optional[Key]:
+    # TODO: assert all online roles have the same and only one keyid, or none
+    key = None
+    if root.roles[Timestamp.type].keyids:
+        key = root.get_key(root.roles[Timestamp.type].keyids[0])
+
+    return key
 
 
 def _show(root: Root):
@@ -299,6 +303,41 @@ def _configure_root_keys(root: Root) -> None:
             console.print(f"Removed '{name}'")
 
 
+def _configure_online_key(root: Root) -> None:
+    """Prompt dialog to set or optionally update the online key."""
+    current_key = _get_online_key(root)
+    if current_key:
+        console.print(f"Current online key is: '{current_key.keyid}'")
+        if not Confirm.ask(
+            "Do you want to change the online key?", default="y"
+        ):
+            return
+
+    while True:
+        try:
+            new_key = _load_public_key_from_file()
+
+        except (OSError, ValueError) as e:
+            console.print(f"Cannot load: {e}")
+            continue
+
+        # Disallow re-adding a key even if it is for a different role.
+        if new_key.keyid in root.keys:
+            console.print("Key already in use.")
+            continue
+
+        break
+
+    uri = f"fn:{new_key.keyid}"
+    new_key.unrecognized_fields[KEY_URI_FIELD] = uri
+    for role_name in ONLINE_ROLE_NAMES:
+        if current_key:
+            root.revoke_key(current_key.keyid, role_name)
+        root.add_key(new_key, role_name)
+
+    console.print(f"Added online key: '{new_key.keyid}'")
+
+
 @rstuf.group()  # type: ignore
 def admin2():
     """POC: alternative admin interface"""
@@ -370,28 +409,7 @@ def ceremony(output) -> None:
     ############################################################################
     # Configure Online Key
     console.print(Markdown("## Online Key"))
-
-    while True:
-        try:
-            key = _load_public_key_from_file()
-
-        except (OSError, ValueError) as e:
-            console.print(f"Cannot load: {e}")
-            continue
-
-        # Disallow re-adding a key even if it is for a different role.
-        if key.keyid in root.keys:
-            console.print("Key already in use.")
-            continue
-
-        break
-
-    uri = f"fn:{key.keyid}"
-    key.unrecognized_fields[KEY_URI_FIELD] = uri
-    for role_name in ONLINE_ROLE_NAMES:
-        root.add_key(key, role_name)
-
-    console.print(f"Added online key: '{key.keyid}'")
+    _configure_online_key(root)
 
     ############################################################################
     # Review Metadata
@@ -519,31 +537,7 @@ def update(root_in, output) -> None:
     # Configure Online Key
 
     console.print(Markdown("## Online Key"))
-
-    current_key = _get_online_key(root)
-    console.print(f"Current online key is: '{current_key.keyid}'")
-    if Confirm.ask("Do you want to change the online key?", default="y"):
-        while True:
-            try:
-                new_key = _load_public_key_from_file()
-
-            except (OSError, ValueError) as e:
-                console.print(f"Cannot load: {e}")
-                continue
-
-            # Disallow re-adding a key even if it is for a different role.
-            if new_key.keyid in root.keys:
-                console.print("Key already in use.")
-                continue
-
-            break
-
-        uri = f"fn:{new_key.keyid}"
-        new_key.unrecognized_fields[KEY_URI_FIELD] = uri
-        for role_name in ONLINE_ROLE_NAMES:
-            root.add_key(new_key, role_name)
-
-        console.print(f"Added online key: '{new_key.keyid}'")
+    _configure_online_key(root)
 
     ############################################################################
     # Bump version
@@ -553,6 +547,7 @@ def update(root_in, output) -> None:
     ############################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
+
     metadata = Metadata(root)
     _show(metadata.signed)
 
