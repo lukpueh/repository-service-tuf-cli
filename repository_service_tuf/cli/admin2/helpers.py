@@ -11,12 +11,9 @@ Goals
 
 """
 
-import json
-import time
-from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import click
 
@@ -27,12 +24,8 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
 )
-from requests import request
-from requests.exceptions import RequestException
-from rich.markdown import Markdown
 from rich.prompt import Confirm, IntPrompt, InvalidResponse, Prompt
 from rich.table import Table
-from securesystemslib.exceptions import StorageError
 from securesystemslib.signer import (
     CryptoSigner,
     Key,
@@ -50,7 +43,6 @@ from tuf.api.metadata import (
     UnsignedMetadataError,
     VerificationResult,
 )
-from tuf.api.serialization import DeserializationError
 
 # TODO: Should we use the global rstuf console exclusively? We do use it for
 # `console.print`, but not with `Confirm/Prompt.ask`. The latter uses a default
@@ -58,8 +50,7 @@ from tuf.api.serialization import DeserializationError
 # configuration or, more importantly, patching in tests easier:
 # https://rich.readthedocs.io/en/stable/console.html#console-api
 # https://rich.readthedocs.io/en/stable/console.html#capturing-output
-from repository_service_tuf.cli import console, rstuf
-from repository_service_tuf.helpers.api_client import URL as ROUTE
+from repository_service_tuf.cli import console
 
 ONLINE_ROLE_NAMES = {Timestamp.type, Snapshot.type, Targets.type}
 
@@ -440,229 +431,3 @@ def _add_root_signatures(
             break
 
         _add_signature(root_md, key)
-
-
-@rstuf.group()  # type: ignore
-def admin2():
-    """POC: alternative admin interface"""
-
-
-@admin2.command()  # type: ignore
-@click.option(
-    "--output",
-    "-o",
-    is_flag=False,
-    flag_value="ceremony-payload.json",
-    help="Write json result to FILENAME (default: 'ceremony-payload.json')",
-    type=click.File("w"),
-)
-def ceremony(output) -> None:
-    """Bootstrap Ceremony to create initial root metadata and RSTUF config.
-
-    Will ask for public key paths and signing key paths.
-    """
-    console.print("\n", Markdown("# Metadata Bootstrap Tool"))
-
-    root = Root()
-
-    ############################################################################
-    # Configure expiration and online settings
-    console.print(Markdown("##  Metadata Expiration"))
-    # Prompt for expiry dates
-    expiration_settings = ExpirationSettings()
-    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-        days, date = _collect_expiry(role)
-        setattr(expiration_settings, role, days)
-        if role == "root":
-            root.expires = date
-
-    console.print(Markdown("## Artifacts"))
-
-    service_settings = ServiceSettings()
-    number_of_bins = IntPrompt.ask(
-        "Choose the number of delegated hash bin roles",
-        default=service_settings.number_of_delegated_bins,
-        choices=[str(2**i) for i in range(1, 15)],
-        show_default=True,
-        show_choices=True,
-    )
-
-    service_settings.number_of_delegated_bins = number_of_bins
-
-    # TODO: validate url
-    targets_base_url = Prompt.ask(
-        "Please enter the targets base URL "
-        "(e.g. https://www.example.com/downloads/)"
-    )
-    if not targets_base_url.endswith("/"):
-        targets_base_url += "/"
-
-    service_settings.targets_base_url = targets_base_url
-
-    ############################################################################
-    # Configure Root Keys
-    console.print(Markdown("## Root Keys"))
-    root_role = root.get_delegated_role(Root.type)
-
-    # TODO: validate default threshold policy?
-    threshold = _PositiveIntPrompt.ask("Please enter root threshold")
-    root_role.threshold = threshold
-
-    _configure_root_keys(root)
-
-    ############################################################################
-    # Configure Online Key
-    console.print(Markdown("## Online Key"))
-    _configure_online_key(root)
-
-    ############################################################################
-    # Review Metadata
-    console.print(Markdown("## Review"))
-    _show(root)
-
-    # TODO: ask to continue? or abort? or start over?
-
-    ############################################################################
-    # Sign Metadata
-    console.print(Markdown("## Sign"))
-    metadata = Metadata(root)
-    _add_root_signatures(metadata, None)
-
-    metadatas = Metadatas(metadata.to_dict())
-    settings = Settings(expiration_settings, service_settings)
-    payload = CeremonyPayload(settings, metadatas)
-    if output:
-        json.dump(asdict(payload), output, indent=2)
-
-
-@admin2.command()  # type: ignore
-@click.argument("root_in", type=click.File("rb"))
-@click.option(
-    "--output",
-    "-o",
-    is_flag=False,
-    flag_value="update-payload.json",
-    help="Write json result to FILENAME (default: 'update-payload.json')",
-    type=click.File("w"),
-)
-def update(root_in, output) -> None:
-    """Update root metadata and bump version.
-
-    Will ask for root metadata, public key paths, and signing key paths.
-    """
-    console.print("\n", Markdown("# Metadata Update Tool"))
-
-    ############################################################################
-    # Load root
-    # TODO: load from API
-    prev_root_md = Metadata[Root].from_bytes(root_in.read())
-    root = deepcopy(prev_root_md.signed)
-
-    ############################################################################
-    # Configure expiration
-    console.print(Markdown("## Root Expiration"))
-
-    expired = root.is_expired()
-    console.print(
-        f"Root expire{'d' if expired else 's'} "
-        f"on {root.expires:{EXPIRY_FORMAT}}"
-    )
-
-    if expired or Confirm.ask(
-        "Do you want to change the expiry date?", default="y"
-    ):
-        _, date = _collect_expiry("root")
-        root.expires = date
-
-    ############################################################################
-    # Configure Root Keys
-    console.print(Markdown("## Root Keys"))
-    root_role = root.get_delegated_role(Root.type)
-
-    # TODO: validate default threshold policy?
-    console.print(f"Current root threshold is {root_role.threshold}")
-    if Confirm.ask("Do you want to change the root threshold?", default="y"):
-        threshold = _PositiveIntPrompt.ask("Please enter root threshold")
-        console.print(f"New root threshold is {threshold}")
-        root_role.threshold = threshold
-
-    _configure_root_keys(root)
-
-    ############################################################################
-    # Configure Online Key
-
-    console.print(Markdown("## Online Key"))
-    _configure_online_key(root)
-
-    ############################################################################
-    # Bump version
-    # TODO: check if metadata changed, or else abort? start over?
-    root.version += 1
-
-    ############################################################################
-    # Review Metadata
-    console.print(Markdown("## Review"))
-
-    metadata = Metadata(root)
-    _show(metadata.signed)
-
-    # TODO: ask to continue? or abort? or start over?
-
-    ############################################################################
-    # Sign Metadata
-    console.print(Markdown("## Sign"))
-    _add_root_signatures(metadata, prev_root_md.signed)
-
-    payload = UpdatePayload(Metadatas(metadata.to_dict()))
-    if output:
-        json.dump(asdict(payload), output, indent=2)
-
-
-@admin2.command()  # type: ignore
-@click.argument("root", type=click.File("rb"))
-@click.argument("prev_root", type=click.File("rb"), required=False)
-@click.option(
-    "--output",
-    "-o",
-    is_flag=False,
-    flag_value="sign-payload.json",
-    help="Write json result to FILENAME (default: 'sign-payload.json')",
-    type=click.File("w"),
-)
-def sign(root, prev_root, output) -> None:
-    """Add one signature to root metadata."""
-    console.print("\n", Markdown("# Metadata Signing Tool"))
-
-    ############################################################################
-    # Load roots
-    # TODO: load from API
-    metadata = Metadata[Root].from_bytes(root.read())
-
-    if prev_root:
-        prev_root = Metadata[Root].from_bytes(prev_root.read()).signed
-
-    root_result = metadata.signed.get_root_verification_result(
-        prev_root,
-        metadata.signed_bytes,
-        metadata.signatures,
-    )
-    if root_result.verified:
-        console.print("Metadata is fully signed.")
-        return
-
-    ############################################################################
-    # Review Metadata
-    console.print(Markdown("## Review"))
-    _show(metadata.signed)
-
-    ############################################################################
-    # Sign Metadata
-    console.print(Markdown("## Sign"))
-    results = _filter_root_verification_results(root_result)
-    keys = _filter_and_print_signing_keys(results)
-    key = _choose_signing_key(keys, allow_skip=False)
-    signature = _add_signature(metadata, key)
-
-    payload = SignPayload(signature=signature.to_dict())
-    if output:
-        json.dump(asdict(payload), output, indent=2)

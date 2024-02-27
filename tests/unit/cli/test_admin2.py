@@ -1,13 +1,11 @@
 import json
 from pathlib import Path
 
-import pretend
 import pytest
-from click.testing import CliRunner
-from tuf.api.metadata import Metadata, Root
 
-import repository_service_tuf.cli.admin2 as admin2
-from repository_service_tuf.cli.admin2 import ceremony, sign, update
+from repository_service_tuf.cli.admin2.ceremony import ceremony
+from repository_service_tuf.cli.admin2.sign import sign
+from repository_service_tuf.cli.admin2.update import update
 
 _FILES = Path(__file__).parent.parent.parent / "files"
 _ROOTS = _FILES / "root"
