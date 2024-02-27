@@ -188,6 +188,18 @@ def _show(root: Root):
     console.print(root_table)
 
 
+def _collect_expiry(role: str) -> Tuple[int, datetime]:
+    """Prompt for expiry date (days from now)."""
+    days = _PositiveIntPrompt.ask(
+        f"Please enter expiry date for '{role}' role in days from now",
+        default=getattr(ExpirationSettings, role),
+    )
+    date = datetime.utcnow() + timedelta(days=days)
+    console.print(f"New expiry date is: {date:{EXPIRY_FORMAT}}")
+
+    return days, date
+
+
 @rstuf.group()  # type: ignore
 def admin2():
     """POC: alternative admin interface"""
@@ -217,17 +229,10 @@ def ceremony(output) -> None:
     # Prompt for expiry dates
     expiration_settings = ExpirationSettings()
     for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-        days = _PositiveIntPrompt.ask(
-            "Please enter number of days from now, "
-            f"when {role} should expire",
-            default=getattr(expiration_settings, role),
-        )
+        days, date = _collect_expiry(role)
         setattr(expiration_settings, role, days)
-
-        expiry_date = datetime.utcnow() + timedelta(days=days)
-        console.print(f"{role} expires on {expiry_date:{EXPIRY_FORMAT}}")
         if role == "root":
-            root.expires = expiry_date
+            root.expires = date
 
     console.print(Markdown("## Artifacts"))
 
@@ -475,13 +480,8 @@ def update(root_in, output) -> None:
     if expired or Confirm.ask(
         "Do you want to change the expiry date?", default="y"
     ):
-        days = _PositiveIntPrompt.ask(
-            "Please enter number of days from now, " "when root should expire",
-            default=100,  # TODO: use per-role constants as default
-        )
-        expiry_date = datetime.utcnow() + timedelta(days=days)
-        console.print(f"New expiration date is {expiry_date:{EXPIRY_FORMAT}}")
-        root.expires = expiry_date
+        _, date = _collect_expiry("root")
+        root.expires = date
 
     ############################################################################
     # Configure Root Keys
