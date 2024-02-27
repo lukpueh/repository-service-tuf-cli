@@ -10,3 +10,6 @@ updates:
       prefix: "build"
       include: "scope"
     open-pull-requests-limit: 10
+
+
+  # TODO: update runtime and dev dependencies

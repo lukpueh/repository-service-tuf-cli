@@ -128,37 +128,18 @@ pre-commit tool.
 Now ``pre-commit`` will run automatically on ``git commit``.
 
 
-Running RSTUF CLI
-~~~~~~~~~~~~~~~~~
-
-.. code:: shell
-    $ pip install -e .
-
-.. code:: shell
-
-    $ pip install -e .
-
-    $ rstuf
-
-    Usage: rstuf [OPTIONS] COMMAND [ARGS]...
-
-    Repository Service for TUF Command Line Interface (CLI).
 
 How to add new requirements
 ---------------------------
 
-Install the requirements package.
-
-The flag -d will install the development requirements.
+- Add runtime requirements to pyproject.toml.
+- Add development requirements to Pipfile. You can use this command
 
 .. code:: shell
 
     $ pipenv install -d <package>
-    $ pipenv install <package>
 
-
-Update all project requirements
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Update Pipfile.lock afterwards
 
 .. code:: shell
 

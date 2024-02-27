@@ -3,20 +3,6 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 name = "pypi"
 
-[packages]
-rich-click = "*"
-securesystemslib = "*"
-click = "*"
-rich = "*"
-auto-click-auto = "*"
-PyNaCl = "==1.5.0"
-requests = "*"
-tuf = "==3.1.0"
-dynaconf = {extras = ["yaml"], version = "*"}
-isort = "*"
-sqlalchemy = "*"
-psycopg2 = "*"
-
 [dev-packages]
 black = "*"
 isort = "*"
@@ -43,6 +29,7 @@ build = "*"
 pre-commit = "*"
 bandit = "*"
 types-requests = "*"
+repository-service-tuf-cli = {editable = true, path = ".", extras=["psycopg2", "sqlalchemy"]}
 
 [requires]
 python_version = "3.9"
