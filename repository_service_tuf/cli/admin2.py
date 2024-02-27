@@ -48,6 +48,7 @@ from tuf.api.metadata import (
     Timestamp,
     UnsignedMetadataError,
     VerificationResult,
+    RootVerificationResult,
 )
 from tuf.api.serialization import DeserializationError
 
@@ -338,6 +339,75 @@ def _configure_online_key(root: Root) -> None:
     console.print(f"Added online key: '{new_key.keyid}'")
 
 
+def _sign_root(metadata: Metadata[Root], results: RootVerificationResult, allow_skip=False) -> Optional[Signature]:
+    """Prompt dialog to sign root with a key from verification result. """
+
+    assert not results
+
+    # Only show distinct unverified results
+    # NOTE: I tried a few different things to construct `results_to_show`,
+    # including list/dict-comprehensions, map, reduce, lambda, etc.
+    # This seems the least ugly solution...
+    results_to_show: list[VerificationResult] = []
+    if not results.first.verified:
+        results_to_show.append(results.first)
+
+    if not results.second.verified and (
+        (results.first.unsigned, results.first.missing)
+        != (results.second.unsigned, results.second.missing)
+    ):
+        results_to_show.append(results.second)
+
+    idx = 0
+    keys_to_use: list[Key] = []
+    for result in results_to_show:
+        console.print(
+            f"Missing {result.missing} signature(s) from any of:"
+        )
+        for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+            console.print(f"{idx}. {name}")
+            keys_to_use.append(key)
+
+    prompt = "Please enter '<number>' to choose a signing key"
+    choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
+    default = ...  # no default
+
+    # Require at least one signature to continue
+    # TODO: do not configure this policy inline
+    if results.signed and allow_skip:
+        prompt += ", or press enter to continue"
+        default = -1
+
+    choice = IntPrompt.ask(
+        prompt,
+        choices=choices,
+        default=default,
+        show_choices=False,
+        show_default=False,
+    )
+    if choice == -1:  # Continue
+        return None
+
+    else:  # Get signing key
+        key = keys_to_use[choice - 1]
+
+    # Sign until success
+    while True:
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+        try:
+            signer = _load_signer_from_file(key)
+            # TODO: Check if the signature is valid for the key?
+            signature = metadata.sign(signer, append=True)
+            console.print(f"Signed metadata with key '{name}'")
+            break
+
+        except (ValueError, OSError, UnsignedMetadataError) as e:
+            console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+    return signature
+
+
 @rstuf.group()  # type: ignore
 def admin2():
     """POC: alternative admin interface"""
@@ -425,54 +495,17 @@ def ceremony(output) -> None:
     console.print(Markdown("## Sign"))
 
     while True:
-        result = metadata.signed.get_verification_result(
-            Root.type,
+        results = root.get_root_verification_result(
+            None,
             metadata.signed_bytes,
             metadata.signatures,
         )
-        if result.verified:
+        if results.verified:
             console.print("Metadata is fully signed.")
             break
 
-        console.print(f"Missing {result.missing} signature(s) from any of:")
-        for idx, key in enumerate(result.unsigned.values(), start=1):
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-            console.print(f"{idx}. {name}")
-
-        prompt = "Please enter '<number>' to choose a signing key"
-        choices = [str(i) for i in range(1, len(result.unsigned) + 1)]
-        default = ...  # no default
-
-        # Require at least one signature to continue
-        # TODO: do not configure this policy inline
-        if result.signed:
-            prompt += ", or press enter to continue"
-            default = -1
-
-        choice = IntPrompt.ask(
-            prompt,
-            choices=choices,
-            default=default,
-            show_choices=False,
-            show_default=False,
-        )
-
-        if choice == -1:  # Continue
+        if not _sign_root(metadata, results, allow_skip=True):
             break
-
-        else:  # Get signing key
-            key = list(result.unsigned.values())[choice - 1]
-
-        while True:
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-            try:
-                signer = _load_signer_from_file(key)
-                metadata.sign(signer, append=True)
-                console.print(f"Signed metadata with key '{name}'")
-                break
-
-            except (ValueError, OSError, UnsignedMetadataError) as e:
-                console.print(f"Cannot sign metadata with key '{name}': {e}")
 
     metadatas = Metadatas(metadata.to_dict())
     settings = Settings(expiration_settings, service_settings)
@@ -567,65 +600,8 @@ def update(root_in, output) -> None:
             console.print("Metadata is fully signed.")
             break
 
-        # Only show distinct unverified results
-        # NOTE: I tried a few different things to construct `results_to_show`,
-        # including list/dict-comprehensions, map, reduce, lambda, etc.
-        # This seems the least ugly solution...
-        results_to_show: list[VerificationResult] = []
-        if not results.first.verified:
-            results_to_show.append(results.first)
-
-        if not results.second.verified and (
-            (results.first.unsigned, results.first.missing)
-            != (results.second.unsigned, results.second.missing)
-        ):
-            results_to_show.append(results.second)
-
-        idx = 0
-        keys_to_use: list[Key] = []
-        for result in results_to_show:
-            console.print(
-                f"Missing {result.missing} signature(s) from any of:"
-            )
-            for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
-                name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-                console.print(f"{idx}. {name}")
-                keys_to_use.append(key)
-
-        prompt = "Please enter '<number>' to choose a signing key"
-        choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
-        default = ...  # no default
-
-        # Require at least one signature to continue
-        # TODO: do not configure this policy inline
-        if result.signed:
-            prompt += ", or press enter to continue"
-            default = -1
-
-        choice = IntPrompt.ask(
-            prompt,
-            choices=choices,
-            default=default,
-            show_choices=False,
-            show_default=False,
-        )
-        if choice == -1:  # Continue
+        if not _sign_root(metadata, results, allow_skip=True):
             break
-
-        else:  # Get signing key
-            key = keys_to_use[choice - 1]
-
-        # Sign until success
-        while True:
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-            try:
-                signer = _load_signer_from_file(key)
-                metadata.sign(signer, append=True)
-                console.print(f"Signed metadata with key '{name}'")
-                break
-
-            except (ValueError, OSError, UnsignedMetadataError) as e:
-                console.print(f"Cannot sign metadata with key '{name}': {e}")
 
     payload = UpdatePayload(Metadatas(metadata.to_dict()))
     if output:
@@ -672,48 +648,7 @@ def sign(root, prev_root, output) -> None:
     ############################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-
-    # Only show distinct unverified results
-    # NOTE: I tried a few different things to construct `results_to_show`,
-    # including list/dict-comprehensions, map, reduce, lambda, etc.
-    # This seems the least ugly solution...
-    results_to_show: list[VerificationResult] = []
-    if not results.first.verified:
-        results_to_show.append(results.first)
-
-    if not results.second.verified and (
-        (results.first.unsigned, results.first.missing)
-        != (results.second.unsigned, results.second.missing)
-    ):
-        results_to_show.append(results.second)
-
-    idx = 0
-    keys_to_use: list[Key] = []
-    for result in results_to_show:
-        console.print(f"Missing {result.missing} signature(s) from any of:")
-        for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-            console.print(f"{idx}. {name}")
-            keys_to_use.append(key)
-
-    prompt = "Please enter '<number>' to choose a signing key"
-    choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
-    choice = IntPrompt.ask(prompt, choices=choices, show_choices=False)
-
-    key = keys_to_use[choice - 1]
-
-    # Sign until success
-    while True:
-        name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-        try:
-            signer = _load_signer_from_file(key)
-            signature = metadata.sign(signer, append=True)
-            # TODO: Check if the signature is valid for the key
-            console.print(f"Signed metadata with key '{name}'")
-            break
-
-        except (ValueError, OSError, UnsignedMetadataError) as e:
-            console.print(f"Cannot sign metadata with key '{name}': {e}")
+    signature = _sign_root(metadata, results)
 
     payload = SignPayload(signature=signature.to_dict())
     if output:
