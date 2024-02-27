@@ -43,12 +43,12 @@ from securesystemslib.signer import (
 from tuf.api.metadata import (
     Metadata,
     Root,
+    RootVerificationResult,
     Snapshot,
     Targets,
     Timestamp,
     UnsignedMetadataError,
     VerificationResult,
-    RootVerificationResult,
 )
 from tuf.api.serialization import DeserializationError
 
@@ -339,43 +339,49 @@ def _configure_online_key(root: Root) -> None:
     console.print(f"Added online key: '{new_key.keyid}'")
 
 
-def _sign_root(metadata: Metadata[Root], results: RootVerificationResult, allow_skip=False) -> Optional[Signature]:
-    """Prompt dialog to sign root with a key from verification result. """
-
-    assert not results
-
-    # Only show distinct unverified results
-    # NOTE: I tried a few different things to construct `results_to_show`,
+def _filter_root_verification_results(
+    root_result: RootVerificationResult,
+) -> list[VerificationResult]:
+    """Filter unverified results with distinct 'missing' and 'unsigned' fields."""
+    # NOTE: Tried a few different things to construct `results`,
     # including list/dict-comprehensions, map, reduce, lambda, etc.
     # This seems the least ugly solution...
-    results_to_show: list[VerificationResult] = []
-    if not results.first.verified:
-        results_to_show.append(results.first)
+    results: list[VerificationResult] = []
+    if not root_result.first.verified:
+        results.append(root_result.first)
 
-    if not results.second.verified and (
-        (results.first.unsigned, results.first.missing)
-        != (results.second.unsigned, results.second.missing)
+    if not root_result.second.verified and (
+        (root_result.first.unsigned, root_result.first.missing)
+        != (root_result.second.unsigned, root_result.second.missing)
     ):
-        results_to_show.append(results.second)
+        results.append(root_result.second)
 
+    return results
+
+
+def _filter_and_print_signing_keys(
+    results: list[VerificationResult],
+) -> list[Key]:
+    keys: list[Key] = []
     idx = 0
-    keys_to_use: list[Key] = []
-    for result in results_to_show:
-        console.print(
-            f"Missing {result.missing} signature(s) from any of:"
-        )
+    for result in results:
+        console.print(f"Missing {result.missing} signature(s) from any of:")
         for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
             name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
             console.print(f"{idx}. {name}")
-            keys_to_use.append(key)
+            keys.append(key)
 
+    return keys
+
+
+def _choose_signing_key(keys: list[Key], allow_skip) -> Optional[Key]:
     prompt = "Please enter '<number>' to choose a signing key"
-    choices = [str(i) for i in range(1, len(keys_to_use) + 1)]
+    choices = [str(i) for i in range(1, len(keys) + 1)]
     default = ...  # no default
 
     # Require at least one signature to continue
     # TODO: do not configure this policy inline
-    if results.signed and allow_skip:
+    if allow_skip:
         prompt += ", or press enter to continue"
         default = -1
 
@@ -386,26 +392,54 @@ def _sign_root(metadata: Metadata[Root], results: RootVerificationResult, allow_
         show_choices=False,
         show_default=False,
     )
+
     if choice == -1:  # Continue
         return None
 
-    else:  # Get signing key
-        key = keys_to_use[choice - 1]
+    # Get signing key
+    return keys[choice - 1]
 
-    # Sign until success
+
+def _add_signature(metadata: Metadata, key: Key) -> Signature:
     while True:
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
         try:
             signer = _load_signer_from_file(key)
             # TODO: Check if the signature is valid for the key?
             signature = metadata.sign(signer, append=True)
-            console.print(f"Signed metadata with key '{name}'")
             break
 
         except (ValueError, OSError, UnsignedMetadataError) as e:
             console.print(f"Cannot sign metadata with key '{name}': {e}")
 
+    console.print(f"Signed metadata with key '{name}'")
     return signature
+
+
+def _add_root_signatures(
+    root_md: Metadata[Root], prev_root: Optional[Root]
+) -> None:
+
+    while True:
+        root_result = root_md.signed.get_root_verification_result(
+            prev_root,
+            root_md.signed_bytes,
+            root_md.signatures,
+        )
+        if root_result.verified:
+            console.print("Metadata is fully signed.")
+            break
+
+        results = _filter_root_verification_results(root_result)
+        keys = _filter_and_print_signing_keys(results)
+
+        allow_skip = bool(root_result.signed)
+        key = _choose_signing_key(keys, allow_skip)
+
+        if not key:
+            break
+
+        _add_signature(root_md, key)
 
 
 @rstuf.group()  # type: ignore
@@ -484,28 +518,15 @@ def ceremony(output) -> None:
     ############################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
-
-    metadata = Metadata(root)
-    _show(metadata.signed)
+    _show(root)
 
     # TODO: ask to continue? or abort? or start over?
 
     ############################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-
-    while True:
-        results = root.get_root_verification_result(
-            None,
-            metadata.signed_bytes,
-            metadata.signatures,
-        )
-        if results.verified:
-            console.print("Metadata is fully signed.")
-            break
-
-        if not _sign_root(metadata, results, allow_skip=True):
-            break
+    metadata = Metadata(root)
+    _add_root_signatures(metadata, None)
 
     metadatas = Metadatas(metadata.to_dict())
     settings = Settings(expiration_settings, service_settings)
@@ -557,6 +578,7 @@ def update(root_in, output) -> None:
     # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
+
     # TODO: validate default threshold policy?
     console.print(f"Current root threshold is {root_role.threshold}")
     if Confirm.ask("Do you want to change the root threshold?", default="y"):
@@ -589,19 +611,7 @@ def update(root_in, output) -> None:
     ############################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-
-    while True:
-        results = root.get_root_verification_result(
-            prev_root_md.signed,
-            metadata.signed_bytes,
-            metadata.signatures,
-        )
-        if results.verified:
-            console.print("Metadata is fully signed.")
-            break
-
-        if not _sign_root(metadata, results, allow_skip=True):
-            break
+    _add_root_signatures(metadata, prev_root_md.signed)
 
     payload = UpdatePayload(Metadatas(metadata.to_dict()))
     if output:
@@ -631,12 +641,12 @@ def sign(root, prev_root, output) -> None:
     if prev_root:
         prev_root = Metadata[Root].from_bytes(prev_root.read()).signed
 
-    results = metadata.signed.get_root_verification_result(
+    root_result = metadata.signed.get_root_verification_result(
         prev_root,
         metadata.signed_bytes,
         metadata.signatures,
     )
-    if results.verified:
+    if root_result.verified:
         console.print("Metadata is fully signed.")
         return
 
@@ -648,7 +658,10 @@ def sign(root, prev_root, output) -> None:
     ############################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-    signature = _sign_root(metadata, results)
+    results = _filter_root_verification_results(root_result)
+    keys = _filter_and_print_signing_keys(results)
+    key = _choose_signing_key(keys, allow_skip=False)
+    signature = _add_signature(metadata, key)
 
     payload = SignPayload(signature=signature.to_dict())
     if output:
