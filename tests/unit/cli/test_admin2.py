@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
+from securesystemslib.signer import CryptoSigner, Key
 
+from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
 from repository_service_tuf.cli.admin2.sign import sign
 from repository_service_tuf.cli.admin2.update import update
@@ -11,6 +14,8 @@ _FILES = Path(__file__).parent.parent.parent / "files"
 _ROOTS = _FILES / "root"
 _PEMS = _FILES / "pem"
 _PAYLOADS = _FILES / "payload"
+
+_INPUT_METH = "rich.console.Console.input"
 
 
 @pytest.fixture
@@ -165,3 +170,40 @@ class TestAdmin2:
             payload["signature"]["keyid"]
             == expected_payload["signature"]["keyid"]
         )
+
+
+@pytest.fixture
+def ed25519_key():
+    return Key.from_dict(
+        "fake_keyid",
+        {
+            "keytype": "ed25519",
+            "keyval": {
+                "public": "4f66dabebcf30628963786001984c0b75c175cdcf3bc4855933a2628f0cd0a0f"
+            },
+            "scheme": "ed25519",
+        },
+    )
+
+
+class TestHelpers:
+    def test_load_signer_from_file_prompt(self, ed25519_key):
+        inputs = [f"{_PEMS / 'ed'}", "hunter2"]
+
+        # success
+        with patch(_INPUT_METH, side_effect=inputs):
+            signer = helpers._load_signer_from_file_prompt(ed25519_key)
+
+        assert isinstance(signer, CryptoSigner)
+
+        # fail with wrong file for key
+        inputs = [f"{_PEMS / 'rsa'}", "hunter2"]
+        with patch(_INPUT_METH, side_effect=inputs):
+            with pytest.raises(ValueError):
+                signer = helpers._load_signer_from_file_prompt(ed25519_key)
+
+        # fail with bad password
+        inputs = [f"{_PEMS / 'ed'}", "hunter1"]
+        with patch(_INPUT_METH, side_effect=inputs):
+            with pytest.raises(ValueError):
+                signer = helpers._load_signer_from_file_prompt(ed25519_key)
