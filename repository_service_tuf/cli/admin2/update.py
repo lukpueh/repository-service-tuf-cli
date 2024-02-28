@@ -19,12 +19,12 @@ from repository_service_tuf.cli.admin2.helpers import (
     EXPIRY_FORMAT,
     Metadatas,
     UpdatePayload,
-    _add_root_signatures,
-    _collect_expiry,
-    _collect_root_threshold,
-    _configure_online_key,
-    _configure_root_keys,
-    _show,
+    _add_root_signatures_prompt,
+    _configure_online_key_prompt,
+    _configure_root_keys_prompt,
+    _expiry_prompt,
+    _print_root,
+    _root_threshold_prompt,
 )
 
 
@@ -60,7 +60,7 @@ def update(root_in, payload_out) -> None:
     if expired or Confirm.ask(
         f"{expiry_str} Do you want to change the expiry date?", default="y"
     ):
-        _, date = _collect_expiry("root")
+        _, date = _expiry_prompt("root")
         root.expires = date
 
     ###########################################################################
@@ -72,14 +72,14 @@ def update(root_in, payload_out) -> None:
     if Confirm.ask(
         f"{threshold_str} Do you want to change the threshold?", default="y"
     ):
-        root_role.threshold = _collect_root_threshold()
+        root_role.threshold = _root_threshold_prompt()
 
-    _configure_root_keys(root)
+    _configure_root_keys_prompt(root)
 
     ###########################################################################
     # Configure Online Key
     console.print(Markdown("## Online Key"))
-    _configure_online_key(root)
+    _configure_online_key_prompt(root)
 
     ###########################################################################
     # Bump version
@@ -90,13 +90,13 @@ def update(root_in, payload_out) -> None:
     # Review Metadata
     console.print(Markdown("## Review"))
     root_md = Metadata(root)
-    _show(root)
+    _print_root(root)
     # TODO: ask to continue? or abort? or start over?
 
     ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-    _add_root_signatures(root_md, prev_root_md.signed)
+    _add_root_signatures_prompt(root_md, prev_root_md.signed)
 
     ###########################################################################
     # Dump payload

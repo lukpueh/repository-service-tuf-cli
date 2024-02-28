@@ -17,13 +17,13 @@ from repository_service_tuf.cli.admin2.helpers import (
     CeremonyPayload,
     Metadatas,
     Settings,
-    _add_root_signatures,
-    _collect_expiration_settings_and_root_expires,
-    _collect_root_threshold,
-    _collect_service_settings,
-    _configure_online_key,
-    _configure_root_keys,
-    _show,
+    _add_root_signatures_prompt,
+    _configure_online_key_prompt,
+    _configure_root_keys_prompt,
+    _expiration_settings_prompt,
+    _print_root,
+    _root_threshold_prompt,
+    _service_settings_prompt,
 )
 
 
@@ -45,37 +45,35 @@ def ceremony(payload_out) -> None:
     ###########################################################################
     # Configure expiration and online service settings
     console.print(Markdown("##  Metadata Expiration"))
-    expiration_settings, root_expires = (
-        _collect_expiration_settings_and_root_expires()
-    )
+    expiration_settings, root_expires = _expiration_settings_prompt()
     root.expires = root_expires
 
     console.print(Markdown("## Artifacts"))
-    service_settings = _collect_service_settings()
+    service_settings = _service_settings_prompt()
 
     ###########################################################################
     # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
-    root_role.threshold = _collect_root_threshold()
-    _configure_root_keys(root)
+    root_role.threshold = _root_threshold_prompt()
+    _configure_root_keys_prompt(root)
 
     ###########################################################################
     # Configure Online Key
     console.print(Markdown("## Online Key"))
-    _configure_online_key(root)
+    _configure_online_key_prompt(root)
 
     ###########################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
-    _show(root)
+    _print_root(root)
     # TODO: ask to continue? or abort? or start over?
 
     ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
     root_md = Metadata(root)
-    _add_root_signatures(root_md, None)
+    _add_root_signatures_prompt(root_md, None)
 
     ###########################################################################
     # Dump payload

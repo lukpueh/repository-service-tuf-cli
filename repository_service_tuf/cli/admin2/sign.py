@@ -15,11 +15,11 @@ from repository_service_tuf.cli import console
 from repository_service_tuf.cli.admin2 import admin2
 from repository_service_tuf.cli.admin2.helpers import (
     SignPayload,
-    _add_signature,
-    _choose_key_for_signing,
+    _add_signature_prompt,
+    _choose_signing_key_prompt,
     _filter_and_print_keys_for_signing,
     _filter_root_verification_results,
-    _show,
+    _print_root,
 )
 
 
@@ -61,15 +61,15 @@ def sign(root_in, prev_root_in, payload_out) -> None:
     ###########################################################################
     # Review metadata
     console.print(Markdown("## Review"))
-    _show(root_md.signed)
+    _print_root(root_md.signed)
 
     ###########################################################################
     # Sign metadata
     console.print(Markdown("## Sign"))
     results = _filter_root_verification_results(root_result)
     keys = _filter_and_print_keys_for_signing(results)
-    key = _choose_key_for_signing(keys, allow_skip=False)
-    signature = _add_signature(root_md, key)
+    key = _choose_signing_key_prompt(keys, allow_skip=False)
+    signature = _add_signature_prompt(root_md, key)
 
     ###########################################################################
     # Dump payload

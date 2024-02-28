@@ -101,6 +101,8 @@ class SignPayload:
     signature: dict[str, str] = None
 
 
+##############################################################################
+# Prompt and dialog helpers
 class _PositiveIntPrompt(IntPrompt):
     validate_error_message = (
         "[prompt.invalid]Please enter a valid positive integer number"
@@ -113,7 +115,20 @@ class _PositiveIntPrompt(IntPrompt):
         return return_value
 
 
-def _load_public_key_from_file() -> Key:
+def _load_signer_from_file_prompt(public_key: Key) -> Signer:
+    """Ask for details to load signer, load and return."""
+    path = Prompt.ask("Please enter path to encrypted private key")
+
+    with open(path, "rb") as f:
+        private_pem = f.read()
+
+    password = Prompt.ask("Please enter password", password=True)
+    private_key = load_pem_private_key(private_pem, password.encode())
+    return CryptoSigner(private_key, public_key)
+
+
+def _load_public_key_from_file_prompt() -> Key:
+    """Prompt for path to local public key, load and return."""
     path = Prompt.ask("Please enter path to public key")
     with open(path, "rb") as f:
         public_pem = f.read()
@@ -125,109 +140,9 @@ def _load_public_key_from_file() -> Key:
     return key
 
 
-def _load_signer_from_file(public_key: Key) -> Signer:
-    path = Prompt.ask("Please enter path to encrypted private key")
-
-    with open(path, "rb") as f:
-        private_pem = f.read()
-
-    password = Prompt.ask("Please enter password", password=True)
-    private_key = load_pem_private_key(private_pem, password.encode())
-    return CryptoSigner(private_key, public_key)
-
-
-def _get_root_keys(root: Root) -> Dict[str, Key]:
-    return {
-        keyid: root.get_key(keyid) for keyid in root.roles[Root.type].keyids
-    }
-
-
-def _get_online_key(root: Root) -> Optional[Key]:
-    # TODO: assert all online roles have the same and only one keyid, or none
-    key = None
-    if root.roles[Timestamp.type].keyids:
-        key = root.get_key(root.roles[Timestamp.type].keyids[0])
-
-    return key
-
-
-def _show(root: Root):
-    """Pretty print root metadata."""
-
-    key_table = Table("Role", "ID", "Name", "Signing Scheme", "Public Value")
-    for key in _get_root_keys(root).values():
-        public_value = key.keyval["public"]  # SSlibKey-specific
-        name = key.unrecognized_fields.get(KEY_NAME_FIELD)
-        key_table.add_row("Root", key.keyid, name, key.scheme, public_value)
-
-    key = _get_online_key(root)
-    key_table.add_row(
-        "Online", key.keyid, "", key.scheme, key.keyval["public"]
-    )
-
-    root_table = Table("Infos", "Keys", title="Root Metadata")
-    root_table.add_row(
-        (
-            f"Expiration: {root.expires:%x}\n"
-            f"Threshold: {root.roles[Root.type].threshold}"
-        ),
-        key_table,
-    )
-
-    console.print(root_table)
-
-
-def _collect_expiry(role: str) -> Tuple[int, datetime]:
-    """Prompt for expiry date (days from now)."""
-    days = _PositiveIntPrompt.ask(
-        f"Please enter expiry date for '{role}' role in days from now",
-        default=getattr(ExpirationSettings, role),
-    )
-    date = datetime.utcnow() + timedelta(days=days)
-    console.print(f"New expiry date is: {date:{EXPIRY_FORMAT}}")
-
-    return days, date
-
-
-def _collect_expiration_settings_and_root_expires() -> (
-    Tuple[ExpirationSettings, datetime]
-):
-    expiration_settings = ExpirationSettings()
-    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-        days, date = _collect_expiry(role)
-        setattr(expiration_settings, role, days)
-        if role == "root":
-            root_expires = date
-
-    return expiration_settings, root_expires
-
-
-def _collect_service_settings() -> ServiceSettings:
-    number_of_bins = IntPrompt.ask(
-        "Choose the number of delegated hash bin roles",
-        default=ServiceSettings.number_of_delegated_bins,
-        choices=[str(2**i) for i in range(1, 15)],
-        show_default=True,
-        show_choices=True,
-    )
-    # TODO: validate url
-    targets_base_url = Prompt.ask(
-        "Please enter the targets base URL "
-        "(e.g. https://www.example.com/downloads/)"
-    )
-    if not targets_base_url.endswith("/"):
-        targets_base_url += "/"
-    return ServiceSettings(number_of_bins, targets_base_url)
-
-
-def _collect_root_threshold() -> int:
-    # TODO: validate default threshold policy?
-    return _PositiveIntPrompt.ask("Please enter root threshold")
-
-
-def _load_key(root) -> Optional[Key]:
+def _load_key_prompt(root) -> Optional[Key]:
     try:
-        key = _load_public_key_from_file()
+        key = _load_public_key_from_file_prompt()
 
     except (OSError, ValueError) as e:
         console.print(f"Cannot load: {e}")
@@ -241,7 +156,7 @@ def _load_key(root) -> Optional[Key]:
     return key
 
 
-def _collect_key_name(root) -> str:
+def _key_name_prompt(root) -> str:
     while True:
         name = Prompt.ask("Please enter a key name")
         if not name:
@@ -260,25 +175,53 @@ def _collect_key_name(root) -> str:
     return name
 
 
-def _print_current_root_keys(root: Root) -> None:
-    root_role = root.get_delegated_role(Root.type)
-    console.print("Current signing keys are:")
-    for idx, keyid in enumerate(root_role.keyids, start=1):
-        key = root.get_key(keyid)
-        name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-        console.print(f"{idx}. {name}")
+def _expiry_prompt(role: str) -> Tuple[int, datetime]:
+    """Prompt for expiry date (days from now)."""
+    days = _PositiveIntPrompt.ask(
+        f"Please enter expiry date for '{role}' role in days from now",
+        default=getattr(ExpirationSettings, role),
+    )
+    date = datetime.utcnow() + timedelta(days=days)
+    console.print(f"New expiry date is: {date:{EXPIRY_FORMAT}}")
+
+    return days, date
 
 
-def _print_missing_key_info(threshold: int, missing: int) -> None:
-    if missing:
-        console.print(
-            f"{missing} more key(s) needed for threshold {threshold}"
-        )
-    else:
-        console.print(f"Threshold {threshold} met, more keys can be added.")
+def _expiration_settings_prompt() -> Tuple[ExpirationSettings, datetime]:
+    expiration_settings = ExpirationSettings()
+    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
+        days, date = _expiry_prompt(role)
+        setattr(expiration_settings, role, days)
+        if role == "root":
+            root_expires = date
+
+    return expiration_settings, root_expires
 
 
-def _choose_add_remove_skip_key(keyids: list[str], allow_skip: bool) -> None:
+def _service_settings_prompt() -> ServiceSettings:
+    number_of_bins = IntPrompt.ask(
+        "Choose the number of delegated hash bin roles",
+        default=ServiceSettings.number_of_delegated_bins,
+        choices=[str(2**i) for i in range(1, 15)],
+        show_default=True,
+        show_choices=True,
+    )
+    # TODO: validate url
+    targets_base_url = Prompt.ask(
+        "Please enter the targets base URL "
+        "(e.g. https://www.example.com/downloads/)"
+    )
+    if not targets_base_url.endswith("/"):
+        targets_base_url += "/"
+    return ServiceSettings(number_of_bins, targets_base_url)
+
+
+def _root_threshold_prompt() -> int:
+    # TODO: validate default threshold policy?
+    return _PositiveIntPrompt.ask("Please enter root threshold")
+
+
+def _add_remove_skip_key_prompt(keyids: list[str], allow_skip: bool) -> None:
     prompt = "Please press '0' to add key, or enter '<number>' to remove key"
     choices = [str(i) for i in range(len(keyids) + 1)]
     default = ...  # no default
@@ -300,7 +243,7 @@ def _choose_add_remove_skip_key(keyids: list[str], allow_skip: bool) -> None:
     return choice
 
 
-def _configure_root_keys(root: Root) -> None:
+def _configure_root_keys_prompt(root: Root) -> None:
     """Prompt dialog to add or remove root key in passed root, until user exit.
 
     - Print if and how many root keys are missing to meet the threshold
@@ -325,7 +268,7 @@ def _configure_root_keys(root: Root) -> None:
             choice = 0
 
         else:
-            choice = _choose_add_remove_skip_key(
+            choice = _add_remove_skip_key_prompt(
                 root_role.keyids, allow_skip=(not missing)
             )
 
@@ -333,11 +276,11 @@ def _configure_root_keys(root: Root) -> None:
             break
 
         elif choice == 0:  # Add key
-            new_key = _load_key(root)
+            new_key = _load_key_prompt(root)
             if not new_key:
                 continue
 
-            name = _collect_key_name(root)
+            name = _key_name_prompt(root)
             new_key.unrecognized_fields[KEY_NAME_FIELD] = name
             root.add_key(new_key, Root.type)
             console.print(f"Added root key '{name}'")
@@ -349,7 +292,7 @@ def _configure_root_keys(root: Root) -> None:
             console.print(f"Removed '{name}'")
 
 
-def _configure_online_key(root: Root) -> None:
+def _configure_online_key_prompt(root: Root) -> None:
     """Prompt dialog to set or optionally update the online key."""
     current_key = _get_online_key(root)
     if current_key:
@@ -360,7 +303,7 @@ def _configure_online_key(root: Root) -> None:
             return
 
     while True:
-        if new_key := _load_key(root):
+        if new_key := _load_key_prompt(root):
             break
 
     uri = f"fn:{new_key.keyid}"
@@ -371,6 +314,119 @@ def _configure_online_key(root: Root) -> None:
         root.add_key(new_key, role_name)
 
     console.print(f"Added online key: '{new_key.keyid}'")
+
+
+def _choose_signing_key_prompt(
+    keys: list[Key], allow_skip: bool
+) -> Optional[Key]:
+    prompt = "Please enter '<number>' to choose a signing key"
+    choices = [str(i) for i in range(1, len(keys) + 1)]
+    default = ...  # no default
+
+    if allow_skip:
+        prompt += ", or press enter to continue"
+        default = -1
+
+    choice = IntPrompt.ask(
+        prompt,
+        choices=choices,
+        default=default,
+        show_choices=False,
+        show_default=False,
+    )
+
+    if choice == -1:  # Continue
+        return None
+
+    # Get signing key
+    return keys[choice - 1]
+
+
+def _add_signature_prompt(metadata: Metadata, key: Key) -> Signature:
+    while True:
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+        try:
+            signer = _load_signer_from_file_prompt(key)
+            # TODO: Check if the signature is valid for the key?
+            signature = metadata.sign(signer, append=True)
+            break
+
+        except (ValueError, OSError, UnsignedMetadataError) as e:
+            console.print(f"Cannot sign metadata with key '{name}': {e}")
+
+    console.print(f"Signed metadata with key '{name}'")
+    return signature
+
+
+def _add_root_signatures_prompt(
+    root_md: Metadata[Root], prev_root: Optional[Root]
+) -> None:
+
+    while True:
+        root_result = root_md.signed.get_root_verification_result(
+            prev_root,
+            root_md.signed_bytes,
+            root_md.signatures,
+        )
+        if root_result.verified:
+            console.print("Metadata is fully signed.")
+            break
+
+        results = _filter_root_verification_results(root_result)
+        keys = _filter_and_print_keys_for_signing(results)
+
+        allow_skip = bool(root_result.signed)
+        key = _choose_signing_key_prompt(keys, allow_skip)
+
+        if not key:
+            break
+
+        _add_signature_prompt(root_md, key)
+
+
+##############################################################################
+# Other helpers
+
+
+def _get_root_keys(root: Root) -> Dict[str, Key]:
+    return {
+        keyid: root.get_key(keyid) for keyid in root.roles[Root.type].keyids
+    }
+
+
+def _get_online_key(root: Root) -> Optional[Key]:
+    # TODO: assert all online roles have the same and only one keyid, or none
+    key = None
+    if root.roles[Timestamp.type].keyids:
+        key = root.get_key(root.roles[Timestamp.type].keyids[0])
+
+    return key
+
+
+def _print_root(root: Root):
+    """Pretty print root metadata."""
+
+    key_table = Table("Role", "ID", "Name", "Signing Scheme", "Public Value")
+    for key in _get_root_keys(root).values():
+        public_value = key.keyval["public"]  # SSlibKey-specific
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD)
+        key_table.add_row("Root", key.keyid, name, key.scheme, public_value)
+
+    key = _get_online_key(root)
+    key_table.add_row(
+        "Online", key.keyid, "", key.scheme, key.keyval["public"]
+    )
+
+    root_table = Table("Infos", "Keys", title="Root Metadata")
+    root_table.add_row(
+        (
+            f"Expiration: {root.expires:%x}\n"
+            f"Threshold: {root.roles[Root.type].threshold}"
+        ),
+        key_table,
+    )
+
+    console.print(root_table)
 
 
 def _filter_root_verification_results(
@@ -409,69 +465,19 @@ def _filter_and_print_keys_for_signing(
     return keys
 
 
-def _choose_key_for_signing(
-    keys: list[Key], allow_skip: bool
-) -> Optional[Key]:
-    prompt = "Please enter '<number>' to choose a signing key"
-    choices = [str(i) for i in range(1, len(keys) + 1)]
-    default = ...  # no default
-
-    if allow_skip:
-        prompt += ", or press enter to continue"
-        default = -1
-
-    choice = IntPrompt.ask(
-        prompt,
-        choices=choices,
-        default=default,
-        show_choices=False,
-        show_default=False,
-    )
-
-    if choice == -1:  # Continue
-        return None
-
-    # Get signing key
-    return keys[choice - 1]
+def _print_current_root_keys(root: Root) -> None:
+    root_role = root.get_delegated_role(Root.type)
+    console.print("Current signing keys are:")
+    for idx, keyid in enumerate(root_role.keyids, start=1):
+        key = root.get_key(keyid)
+        name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+        console.print(f"{idx}. {name}")
 
 
-def _add_signature(metadata: Metadata, key: Key) -> Signature:
-    while True:
-        name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-        try:
-            signer = _load_signer_from_file(key)
-            # TODO: Check if the signature is valid for the key?
-            signature = metadata.sign(signer, append=True)
-            break
-
-        except (ValueError, OSError, UnsignedMetadataError) as e:
-            console.print(f"Cannot sign metadata with key '{name}': {e}")
-
-    console.print(f"Signed metadata with key '{name}'")
-    return signature
-
-
-def _add_root_signatures(
-    root_md: Metadata[Root], prev_root: Optional[Root]
-) -> None:
-
-    while True:
-        root_result = root_md.signed.get_root_verification_result(
-            prev_root,
-            root_md.signed_bytes,
-            root_md.signatures,
+def _print_missing_key_info(threshold: int, missing: int) -> None:
+    if missing:
+        console.print(
+            f"{missing} more key(s) needed for threshold {threshold}"
         )
-        if root_result.verified:
-            console.print("Metadata is fully signed.")
-            break
-
-        results = _filter_root_verification_results(root_result)
-        keys = _filter_and_print_keys_for_signing(results)
-
-        allow_skip = bool(root_result.signed)
-        key = _choose_key_for_signing(keys, allow_skip)
-
-        if not key:
-            break
-
-        _add_signature(root_md, key)
+    else:
+        console.print(f"Threshold {threshold} met, more keys can be added.")
