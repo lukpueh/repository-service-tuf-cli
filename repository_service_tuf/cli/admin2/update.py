@@ -31,14 +31,14 @@ from repository_service_tuf.cli.admin2.helpers import (
 @admin2.command()  # type: ignore
 @click.argument("root_in", type=click.File("rb"))
 @click.option(
-    "--output",
+    "--payload-out",
     "-o",
     is_flag=False,
     flag_value="update-payload.json",
     help="Write json result to FILENAME (default: 'update-payload.json')",
     type=click.File("w"),
 )
-def update(root_in, output) -> None:
+def update(root_in, payload_out) -> None:
     """Update root metadata and bump version.
 
     Will ask for root metadata, public key paths, and signing key paths.
@@ -96,16 +96,16 @@ def update(root_in, output) -> None:
     # Review Metadata
     console.print(Markdown("## Review"))
 
-    metadata = Metadata(root)
-    _show(metadata.signed)
+    root_md = Metadata(root)
+    _show(root_md.signed)
 
     # TODO: ask to continue? or abort? or start over?
 
     ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-    _add_root_signatures(metadata, prev_root_md.signed)
+    _add_root_signatures(root_md, prev_root_md.signed)
 
-    payload = UpdatePayload(Metadatas(metadata.to_dict()))
-    if output:
-        json.dump(asdict(payload), output, indent=2)
+    payload = UpdatePayload(Metadatas(root_md.to_dict()))
+    if payload_out:
+        json.dump(asdict(payload), payload_out, indent=2)

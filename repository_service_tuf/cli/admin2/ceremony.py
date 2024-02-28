@@ -31,14 +31,14 @@ from repository_service_tuf.cli.admin2.helpers import (
 
 @admin2.command()  # type: ignore
 @click.option(
-    "--output",
+    "--payload-out",
     "-o",
     is_flag=False,
     flag_value="ceremony-payload.json",
     help="Write json result to FILENAME (default: 'ceremony-payload.json')",
     type=click.File("w"),
 )
-def ceremony(output) -> None:
+def ceremony(payload_out) -> None:
     """Bootstrap Ceremony to create initial root metadata and RSTUF config.
 
     Will ask for public key paths and signing key paths.
@@ -107,11 +107,11 @@ def ceremony(output) -> None:
     ###########################################################################
     # Sign Metadata
     console.print(Markdown("## Sign"))
-    metadata = Metadata(root)
-    _add_root_signatures(metadata, None)
+    root_md = Metadata(root)
+    _add_root_signatures(root_md, None)
 
-    metadatas = Metadatas(metadata.to_dict())
+    metadatas = Metadatas(root_md.to_dict())
     settings = Settings(expiration_settings, service_settings)
     payload = CeremonyPayload(settings, metadatas)
-    if output:
-        json.dump(asdict(payload), output, indent=2)
+    if payload_out:
+        json.dump(asdict(payload), payload_out, indent=2)
