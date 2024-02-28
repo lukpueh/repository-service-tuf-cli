@@ -21,9 +21,9 @@ from repository_service_tuf.cli.admin2.helpers import (
     UpdatePayload,
     _add_root_signatures,
     _collect_expiry,
+    _collect_root_threshold,
     _configure_online_key,
     _configure_root_keys,
-    _PositiveIntPrompt,
     _show,
 )
 
@@ -39,10 +39,7 @@ from repository_service_tuf.cli.admin2.helpers import (
     type=click.File("w"),
 )
 def update(root_in, payload_out) -> None:
-    """Update root metadata and bump version.
-
-    Will ask for root metadata, public key paths, and signing key paths.
-    """
+    """Update root metadata and bump version."""
     console.print("\n", Markdown("# Metadata Update Tool"))
 
     ###########################################################################
@@ -52,38 +49,35 @@ def update(root_in, payload_out) -> None:
     root = deepcopy(prev_root_md.signed)
 
     ###########################################################################
-    # Configure expiration
+    # Configure root expiration
     console.print(Markdown("## Root Expiration"))
 
     expired = root.is_expired()
-    console.print(
+    expiry_str = (
         f"Root expire{'d' if expired else 's'} "
-        f"on {root.expires:{EXPIRY_FORMAT}}"
+        f"on {root.expires:{EXPIRY_FORMAT}}."
     )
-
     if expired or Confirm.ask(
-        "Do you want to change the expiry date?", default="y"
+        f"{expiry_str} Do you want to change the expiry date?", default="y"
     ):
         _, date = _collect_expiry("root")
         root.expires = date
 
     ###########################################################################
-    # Configure Root Keys
+    # Configure root keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
 
-    # TODO: validate default threshold policy?
-    console.print(f"Current root threshold is {root_role.threshold}")
-    if Confirm.ask("Do you want to change the root threshold?", default="y"):
-        threshold = _PositiveIntPrompt.ask("Please enter root threshold")
-        console.print(f"New root threshold is {threshold}")
-        root_role.threshold = threshold
+    threshold_str = f"Root signature threshold is {root_role.threshold}."
+    if Confirm.ask(
+        f"{threshold_str} Do you want to change the threshold?", default="y"
+    ):
+        root_role.threshold = _collect_root_threshold()
 
     _configure_root_keys(root)
 
     ###########################################################################
     # Configure Online Key
-
     console.print(Markdown("## Online Key"))
     _configure_online_key(root)
 
@@ -95,10 +89,8 @@ def update(root_in, payload_out) -> None:
     ###########################################################################
     # Review Metadata
     console.print(Markdown("## Review"))
-
     root_md = Metadata(root)
-    _show(root_md.signed)
-
+    _show(root)
     # TODO: ask to continue? or abort? or start over?
 
     ###########################################################################
@@ -106,6 +98,9 @@ def update(root_in, payload_out) -> None:
     console.print(Markdown("## Sign"))
     _add_root_signatures(root_md, prev_root_md.signed)
 
+    ###########################################################################
+    # Dump payload
+    # TODO: post to API
     payload = UpdatePayload(Metadatas(root_md.to_dict()))
     if payload_out:
         json.dump(asdict(payload), payload_out, indent=2)

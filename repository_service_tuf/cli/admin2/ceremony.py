@@ -3,7 +3,6 @@ from dataclasses import asdict
 
 import click
 from rich.markdown import Markdown
-from rich.prompt import IntPrompt, Prompt
 from tuf.api.metadata import Metadata, Root
 
 # TODO: Should we use the global rstuf console exclusively? We do use it for
@@ -16,15 +15,14 @@ from repository_service_tuf.cli import console
 from repository_service_tuf.cli.admin2 import admin2
 from repository_service_tuf.cli.admin2.helpers import (
     CeremonyPayload,
-    ExpirationSettings,
     Metadatas,
-    ServiceSettings,
     Settings,
     _add_root_signatures,
-    _collect_expiry,
+    _collect_expiration_settings_and_root_expires,
+    _collect_root_threshold,
+    _collect_service_settings,
     _configure_online_key,
     _configure_root_keys,
-    _PositiveIntPrompt,
     _show,
 )
 
@@ -39,57 +37,27 @@ from repository_service_tuf.cli.admin2.helpers import (
     type=click.File("w"),
 )
 def ceremony(payload_out) -> None:
-    """Bootstrap Ceremony to create initial root metadata and RSTUF config.
-
-    Will ask for public key paths and signing key paths.
-    """
+    """Bootstrap Ceremony to create initial root metadata and RSTUF config."""
     console.print("\n", Markdown("# Metadata Bootstrap Tool"))
 
     root = Root()
 
     ###########################################################################
-    # Configure expiration and online settings
+    # Configure expiration and online service settings
     console.print(Markdown("##  Metadata Expiration"))
-    # Prompt for expiry dates
-    expiration_settings = ExpirationSettings()
-    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-        days, date = _collect_expiry(role)
-        setattr(expiration_settings, role, days)
-        if role == "root":
-            root.expires = date
+    expiration_settings, root_expires = (
+        _collect_expiration_settings_and_root_expires()
+    )
+    root.expires = root_expires
 
     console.print(Markdown("## Artifacts"))
-
-    service_settings = ServiceSettings()
-    number_of_bins = IntPrompt.ask(
-        "Choose the number of delegated hash bin roles",
-        default=service_settings.number_of_delegated_bins,
-        choices=[str(2**i) for i in range(1, 15)],
-        show_default=True,
-        show_choices=True,
-    )
-
-    service_settings.number_of_delegated_bins = number_of_bins
-
-    # TODO: validate url
-    targets_base_url = Prompt.ask(
-        "Please enter the targets base URL "
-        "(e.g. https://www.example.com/downloads/)"
-    )
-    if not targets_base_url.endswith("/"):
-        targets_base_url += "/"
-
-    service_settings.targets_base_url = targets_base_url
+    service_settings = _collect_service_settings()
 
     ###########################################################################
     # Configure Root Keys
     console.print(Markdown("## Root Keys"))
     root_role = root.get_delegated_role(Root.type)
-
-    # TODO: validate default threshold policy?
-    threshold = _PositiveIntPrompt.ask("Please enter root threshold")
-    root_role.threshold = threshold
-
+    root_role.threshold = _collect_root_threshold()
     _configure_root_keys(root)
 
     ###########################################################################
@@ -101,7 +69,6 @@ def ceremony(payload_out) -> None:
     # Review Metadata
     console.print(Markdown("## Review"))
     _show(root)
-
     # TODO: ask to continue? or abort? or start over?
 
     ###########################################################################
@@ -110,8 +77,11 @@ def ceremony(payload_out) -> None:
     root_md = Metadata(root)
     _add_root_signatures(root_md, None)
 
-    metadatas = Metadatas(root_md.to_dict())
-    settings = Settings(expiration_settings, service_settings)
-    payload = CeremonyPayload(settings, metadatas)
+    ###########################################################################
+    # Dump payload
+    # TODO: post to API
     if payload_out:
+        metadatas = Metadatas(root_md.to_dict())
+        settings = Settings(expiration_settings, service_settings)
+        payload = CeremonyPayload(settings, metadatas)
         json.dump(asdict(payload), payload_out, indent=2)

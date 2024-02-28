@@ -2,12 +2,11 @@
 
 Provides alternative ceremony, metadata update, and sign admin cli commands.
 
-Goals
------
+Advantages
+----------
 - use state-of-the-art securesystemslib Signer API only
 - simplify (e.g. avoid custom/redundant abstractions over Metadata API)
 - configure online signer location via uri attached to public key
-  (for repository-service-tuf/repository-service-tuf-worker#427)
 
 """
 
@@ -115,9 +114,7 @@ class _PositiveIntPrompt(IntPrompt):
 
 
 def _load_public_key_from_file() -> Key:
-    """Prompt for path to local public key, load and return."""
-
-    path = Prompt.ask("Please enter a public key path")
+    path = Prompt.ask("Please enter path to public key")
     with open(path, "rb") as f:
         public_pem = f.read()
 
@@ -129,8 +126,7 @@ def _load_public_key_from_file() -> Key:
 
 
 def _load_signer_from_file(public_key: Key) -> Signer:
-    """Ask for details to load signer, load and return."""
-    path = Prompt.ask("Please enter path to encrypted local private key")
+    path = Prompt.ask("Please enter path to encrypted private key")
 
     with open(path, "rb") as f:
         private_pem = f.read()
@@ -193,6 +189,42 @@ def _collect_expiry(role: str) -> Tuple[int, datetime]:
     return days, date
 
 
+def _collect_expiration_settings_and_root_expires() -> (
+    Tuple[ExpirationSettings, datetime]
+):
+    expiration_settings = ExpirationSettings()
+    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
+        days, date = _collect_expiry(role)
+        setattr(expiration_settings, role, days)
+        if role == "root":
+            root_expires = date
+
+    return expiration_settings, root_expires
+
+
+def _collect_service_settings() -> ServiceSettings:
+    number_of_bins = IntPrompt.ask(
+        "Choose the number of delegated hash bin roles",
+        default=ServiceSettings.number_of_delegated_bins,
+        choices=[str(2**i) for i in range(1, 15)],
+        show_default=True,
+        show_choices=True,
+    )
+    # TODO: validate url
+    targets_base_url = Prompt.ask(
+        "Please enter the targets base URL "
+        "(e.g. https://www.example.com/downloads/)"
+    )
+    if not targets_base_url.endswith("/"):
+        targets_base_url += "/"
+    return ServiceSettings(number_of_bins, targets_base_url)
+
+
+def _collect_root_threshold() -> int:
+    # TODO: validate default threshold policy?
+    return _PositiveIntPrompt.ask("Please enter root threshold")
+
+
 def _load_key(root) -> Optional[Key]:
     try:
         key = _load_public_key_from_file()
@@ -229,7 +261,6 @@ def _collect_key_name(root) -> str:
 
 
 def _print_current_root_keys(root: Root) -> None:
-
     root_role = root.get_delegated_role(Root.type)
     console.print("Current signing keys are:")
     for idx, keyid in enumerate(root_role.keyids, start=1):
@@ -265,6 +296,7 @@ def _choose_add_remove_skip_key(keyids: list[str], allow_skip: bool) -> None:
     )
     if choice not in [-1, 0]:
         choice = keyids[choice - 1]
+
     return choice
 
 

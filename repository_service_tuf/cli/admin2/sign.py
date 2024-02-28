@@ -47,6 +47,8 @@ def sign(root_in, prev_root_in, payload_out) -> None:
     if prev_root_in:
         prev_root = Metadata[Root].from_bytes(prev_root_in.read()).signed
 
+    ###########################################################################
+    # Verify signatures
     root_result = root_md.signed.get_root_verification_result(
         prev_root,
         root_md.signed_bytes,
@@ -57,18 +59,21 @@ def sign(root_in, prev_root_in, payload_out) -> None:
         return
 
     ###########################################################################
-    # Review Metadata
+    # Review metadata
     console.print(Markdown("## Review"))
     _show(root_md.signed)
 
     ###########################################################################
-    # Sign Metadata
+    # Sign metadata
     console.print(Markdown("## Sign"))
     results = _filter_root_verification_results(root_result)
     keys = _filter_and_print_keys_for_signing(results)
     key = _choose_key_for_signing(keys, allow_skip=False)
     signature = _add_signature(root_md, key)
 
-    payload = SignPayload(signature=signature.to_dict())
+    ###########################################################################
+    # Dump payload
+    # TODO: post to API
     if payload_out:
+        payload = SignPayload(signature=signature.to_dict())
         json.dump(asdict(payload), payload_out, indent=2)
