@@ -1,9 +1,11 @@
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
-from securesystemslib.signer import CryptoSigner, Key
+from pretend import stub
+from securesystemslib.signer import CryptoSigner, Key, SSlibKey
 
 from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
@@ -15,7 +17,8 @@ _ROOTS = _FILES / "root"
 _PEMS = _FILES / "pem"
 _PAYLOADS = _FILES / "payload"
 
-_INPUT_METH = "rich.console.Console.input"
+_PROMPT = "rich.console.Console.input"
+_HELPERS = "repository_service_tuf.cli.admin2.helpers"
 
 
 @pytest.fixture
@@ -184,24 +187,120 @@ def ed25519_key():
     )
 
 
+@pytest.fixture
+def patch_utcnow(monkeypatch):
+    """Patch now in admin2 (extend expiry) and metadata api (check expiry)."""
+
+    class FakeTime(datetime):
+        @classmethod
+        def utcnow(cls):
+            return datetime(2024, 1, 1, 0, 0, 0)
+
+    monkeypatch.setattr(f"{_HELPERS}.datetime", FakeTime)
+
+
 class TestHelpers:
     def test_load_signer_from_file_prompt(self, ed25519_key):
-        inputs = [f"{_PEMS / 'ed'}", "hunter2"]
-
         # success
-        with patch(_INPUT_METH, side_effect=inputs):
+        inputs = [f"{_PEMS / 'ed'}", "hunter2"]
+        with patch(_PROMPT, side_effect=inputs):
             signer = helpers._load_signer_from_file_prompt(ed25519_key)
 
         assert isinstance(signer, CryptoSigner)
 
         # fail with wrong file for key
         inputs = [f"{_PEMS / 'rsa'}", "hunter2"]
-        with patch(_INPUT_METH, side_effect=inputs):
+        with patch(_PROMPT, side_effect=inputs):
             with pytest.raises(ValueError):
                 signer = helpers._load_signer_from_file_prompt(ed25519_key)
 
         # fail with bad password
         inputs = [f"{_PEMS / 'ed'}", "hunter1"]
-        with patch(_INPUT_METH, side_effect=inputs):
+        with patch(_PROMPT, side_effect=inputs):
             with pytest.raises(ValueError):
                 signer = helpers._load_signer_from_file_prompt(ed25519_key)
+
+    def test_load_key_from_file_prompt(self):
+        # success
+        inputs = [f"{_PEMS / 'ed.pub'}"]
+        with patch(_PROMPT, side_effect=inputs):
+            key = helpers._load_key_from_file_prompt()
+
+        assert isinstance(key, SSlibKey)
+
+        # fail with wrong file
+        inputs = [f"{_PEMS / 'ed'}"]
+        with patch(_PROMPT, side_effect=inputs):
+            with pytest.raises(ValueError):
+                signer = helpers._load_key_from_file_prompt()
+
+    def test_load_key_prompt(self):
+        fake_root = stub(keys={"123"})
+
+        # return key
+        fake_key = stub(keyid="abc")
+        with patch(
+            f"{_HELPERS}._load_key_from_file_prompt", return_value=fake_key
+        ):
+            key = helpers._load_key_prompt(fake_root)
+
+        assert key == fake_key
+
+        # return None - key in use
+        fake_key = stub(keyid="123")
+        with patch(
+            f"{_HELPERS}._load_key_from_file_prompt", return_value=fake_key
+        ):
+            key = helpers._load_key_prompt(fake_root)
+
+        assert key is None
+
+        # return None - cannot load key
+        for err in [OSError, ValueError]:
+            with patch(
+                f"{_HELPERS}._load_key_from_file_prompt", side_effect=err()
+            ):
+                key = helpers._load_key_prompt(fake_root)
+                assert key is None
+
+    def test_key_name_prompt(self):
+        fake_key = stub(unrecognized_fields={helpers.KEY_NAME_FIELD: "taken"})
+        fake_root = stub(keys={"fake_key": fake_key})
+
+        # iterate over name inputs until name is not empty and not taken
+        inputs = ["", "taken", "new"]
+        with patch(_PROMPT, side_effect=inputs):
+            name = helpers._key_name_prompt(fake_root)
+
+        assert name == "new"
+
+    def test_expiry_prompt(self, patch_utcnow):
+        # Assert bump expiry by days
+        days_input = 10
+        with patch(_PROMPT, side_effect=[str(days_input)]):
+            result = helpers._expiry_prompt("root")
+
+        assert result == (
+            days_input,
+            datetime(2024, 1, 11, 0, 0, 0),  # see patch_utcnow
+        )
+
+        # Assert bump per-role default expiry
+        for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
+            expected_days = getattr(helpers.ExpirationSettings, role)
+            days_input = ""
+            with patch(_PROMPT, side_effect=[days_input]):
+                days, _ = helpers._expiry_prompt(role)
+
+            assert days == expected_days
+
+    def test_expiration_settings_prompt(self, patch_utcnow):
+        inputs = [""] * 5
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._expiration_settings_prompt()
+
+        # Assert default ExpirationSettings and default root expiration date
+        assert result == (
+            helpers.ExpirationSettings(),
+            datetime(2024, 12, 31, 0, 0),
+        )
