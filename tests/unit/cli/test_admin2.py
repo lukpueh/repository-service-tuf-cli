@@ -1,11 +1,12 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from pretend import stub
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
+from tuf.api.metadata import Root
 
 from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
@@ -304,3 +305,72 @@ class TestHelpers:
             helpers.ExpirationSettings(),
             datetime(2024, 12, 31, 0, 0),
         )
+
+    def test_service_settings_prompt(self):
+        data = [
+            (
+                ("", "example.com"),
+                (
+                    helpers.ServiceSettings.number_of_delegated_bins,
+                    "example.com/",
+                ),
+            ),
+            (
+                ("2", "example.org/"),
+                (
+                    2,
+                    "example.org/",
+                ),
+            ),
+        ]
+        for inputs, expected in data:
+            with patch(_PROMPT, side_effect=inputs):
+                result = helpers._service_settings_prompt()
+
+            assert result == helpers.ServiceSettings(*expected)
+
+    def test_root_threshold_prompt(self):
+        # prompt for threshold until postive integer
+        inputs = ["-1", "0", "X", "5"]
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._root_threshold_prompt()
+        assert result == 5
+
+    def test_choose_add_remove_skip_key_prompt(self):
+        # prompt for choice until in allowed range, default is disallowed
+        inputs = ["-1", "", "2", "1"]
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._choose_add_remove_skip_key_prompt(1, False)
+        assert result == 1
+
+        # default allowed but cannot be entered explicitly
+        inputs = ["-1", ""]
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._choose_add_remove_skip_key_prompt(1, True)
+        assert result == -1
+
+    def test_configure_root_keys_prompt(self, ed25519_key):
+        # Configure root keys in empty root
+        # NOTE: This is quite intricate but gives us full coverage
+        # The course of action is:
+        # 1. User is forced to add key to reach threshold (load: ed25519_key)
+        # 2. User chooses to re-add key (choice: 0) but fails (load: None)
+        # 3. User chooses to remove key (choice: 1)
+        # 4. User is forced to add key to reach threshold (load: ed25519_key)
+        # 5. User chooses to exit (choice: -1)
+
+        root = Root()
+        with (
+            patch(
+                f"{_HELPERS}._load_key_prompt",
+                side_effect=[ed25519_key, None, ed25519_key],
+            ),
+            patch(f"{_HELPERS}._key_name_prompt", return_value="foo"),
+            patch(
+                f"{_HELPERS}._choose_add_remove_skip_key_prompt",
+                side_effect=[0, 1, -1],
+            ),
+        ):
+            helpers._configure_root_keys_prompt(root)
+
+        assert ed25519_key.keyid in root.keys

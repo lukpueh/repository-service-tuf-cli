@@ -223,10 +223,17 @@ def _root_threshold_prompt() -> int:
     return _PositiveIntPrompt.ask("Please enter root threshold")
 
 
-def _choose_add_remove_skip_key_prompt(key_count: int, allow_skip: bool) -> int:
-    """Prompt for choice"""
+def _choose_add_remove_skip_key_prompt(
+    key_count: int, allow_skip: bool
+) -> int:
+    """Prompt for key config user choice, return:
 
-    prompt = "Please press '0' to add key, or enter '<number>' to remove key"
+    -1: skip (only if `allow_skip` is true)
+     0: add key
+     i: remove key by index (starts at 1!)
+    """
+
+    prompt = "Please press 0 to add a key, or remove a key by its index"
     choices = [str(i) for i in range(key_count + 1)]
     default: Any = ...  # no default
 
@@ -263,19 +270,21 @@ def _configure_root_keys_prompt(root: Root) -> None:
         missing = max(0, root_role.threshold - len(root_role.keyids))
         _print_missing_key_info(root_role.threshold, missing)
 
-        # Prompt for choice (unless user must add keys)
+        # Prompt for choice unless user must add keys
         if not root_role.keyids:
             choice = 0
+
         else:
+            allow_skip = not missing
             choice = _choose_add_remove_skip_key_prompt(
-                len(root_role.keyids), allow_skip=(not missing)
+                len(root_role.keyids), allow_skip
             )
 
         # Apply choice
-        if choice == -1: # skip
+        if choice == -1:  # skip
             break
 
-        elif choice == 0: # add
+        elif choice == 0:  # add
             new_key = _load_key_prompt(root)
             if not new_key:
                 continue
@@ -285,7 +294,7 @@ def _configure_root_keys_prompt(root: Root) -> None:
             root.add_key(new_key, Root.type)
             console.print(f"Added root key '{name}'")
 
-        else: # remove
+        else:  # remove
             keyid = root_role.keyids[choice - 1]
             key = root.get_key(keyid)
             name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
