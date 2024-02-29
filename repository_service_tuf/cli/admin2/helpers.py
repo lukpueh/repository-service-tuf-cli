@@ -173,7 +173,8 @@ def _key_name_prompt(root) -> str:
 
 def _expiry_prompt(role: str) -> Tuple[int, datetime]:
     """Prompt for days until expiry for role, returns days and expiry date.
-    Uses per-role defaults from ExpirationSettings.
+
+    Use per-role defaults from ExpirationSettings.
     """
     days = _PositiveIntPrompt.ask(
         f"Please enter days until expiry for '{role}'",
@@ -186,6 +187,11 @@ def _expiry_prompt(role: str) -> Tuple[int, datetime]:
 
 
 def _expiration_settings_prompt() -> Tuple[ExpirationSettings, datetime]:
+    """Prompt for expiry days for all roles, return as ExpirationSettings.
+
+    NOTE: We also return the expiration date for root only. This makes the
+    interface a bit weird, but it is what the caller needs.
+    """
     expiration_settings = ExpirationSettings()
     for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
         days, date = _expiry_prompt(role)
