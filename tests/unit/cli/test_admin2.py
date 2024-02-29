@@ -31,9 +31,7 @@ def patch_getpass(monkeypatch):
         # no need to mock prompt output, rich prompts independently
         return "hunter2"
 
-    import rich.console
-
-    monkeypatch.setattr(rich.console, "getpass", mock_getpass)
+    monkeypatch.setattr("rich.console.getpass", mock_getpass)
 
 
 # flake8: noqa
