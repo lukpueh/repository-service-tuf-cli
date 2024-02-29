@@ -58,7 +58,7 @@ def update(root_in, payload_out) -> None:
         f"on {root.expires:{EXPIRY_FORMAT}}."
     )
     if expired or Confirm.ask(
-        f"{expiry_str} Do you want to change the expiry date?", default="y"
+        f"{expiry_str} Do you want to change the expiry date?", default=True
     ):
         _, date = _expiry_prompt("root")
         root.expires = date

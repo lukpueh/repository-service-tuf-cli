@@ -22,13 +22,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from rich.prompt import Confirm, IntPrompt, InvalidResponse, Prompt
 from rich.table import Table
-from securesystemslib.signer import (
-    CryptoSigner,
-    Key,
-    Signature,
-    Signer,
-    SSlibKey,
-)
+from securesystemslib.signer import CryptoSigner, Key, Signature, SSlibKey
 from tuf.api.metadata import (
     Metadata,
     Root,
@@ -86,7 +80,7 @@ class ExpirationSettings:
 @dataclass
 class ServiceSettings:
     number_of_delegated_bins: int = 256
-    targets_base_url: str = None
+    targets_base_url: Optional[str] = None
     targets_online_key: bool = True
 
 
@@ -97,8 +91,8 @@ class UpdatePayload:
 
 @dataclass
 class SignPayload:
+    signature: dict[str, str]
     role: str = "root"
-    signature: dict[str, str] = None
 
 
 ##############################################################################
@@ -115,8 +109,8 @@ class _PositiveIntPrompt(IntPrompt):
         return return_value
 
 
-def _load_signer_from_file_prompt(public_key: Key) -> Signer:
-    """Ask for details to load signer, load and return."""
+def _load_signer_from_file_prompt(public_key: SSlibKey) -> CryptoSigner:
+    """Prompt for path to private key and password, return Signer."""
     path = Prompt.ask("Please enter path to encrypted private key")
 
     with open(path, "rb") as f:
@@ -127,8 +121,8 @@ def _load_signer_from_file_prompt(public_key: Key) -> Signer:
     return CryptoSigner(private_key, public_key)
 
 
-def _load_public_key_from_file_prompt() -> Key:
-    """Prompt for path to local public key, load and return."""
+def _load_key_from_file_prompt() -> SSlibKey:
+    """Prompt for path to public key, return Key."""
     path = Prompt.ask("Please enter path to public key")
     with open(path, "rb") as f:
         public_pem = f.read()
@@ -140,12 +134,13 @@ def _load_public_key_from_file_prompt() -> Key:
     return key
 
 
-def _load_key_prompt(root) -> Optional[Key]:
+def _load_key_prompt(root: Root) -> Optional[Key]:
+    """Prompt and return Key, or None on error or if key is already loaded."""
     try:
-        key = _load_public_key_from_file_prompt()
+        key = _load_key_from_file_prompt()
 
     except (OSError, ValueError) as e:
-        console.print(f"Cannot load: {e}")
+        console.print(f"Cannot load key: {e}")
         return None
 
     # Disallow re-adding a key even if it is for a different role.
@@ -157,6 +152,7 @@ def _load_key_prompt(root) -> Optional[Key]:
 
 
 def _key_name_prompt(root) -> str:
+    """Prompt for key name until success."""
     while True:
         name = Prompt.ask("Please enter a key name")
         if not name:
@@ -176,9 +172,11 @@ def _key_name_prompt(root) -> str:
 
 
 def _expiry_prompt(role: str) -> Tuple[int, datetime]:
-    """Prompt for expiry date (days from now)."""
+    """Prompt for days until expiry for role, returns days and expiry date.
+    Uses per-role defaults from ExpirationSettings.
+    """
     days = _PositiveIntPrompt.ask(
-        f"Please enter expiry date for '{role}' role in days from now",
+        f"Please enter days until expiry for '{role}'",
         default=getattr(ExpirationSettings, role),
     )
     date = datetime.utcnow() + timedelta(days=days)
@@ -221,26 +219,36 @@ def _root_threshold_prompt() -> int:
     return _PositiveIntPrompt.ask("Please enter root threshold")
 
 
-def _add_remove_skip_key_prompt(keyids: list[str], allow_skip: bool) -> None:
+class Continue(Exception):
+    pass
+
+
+def _add_remove_skip_key_prompt(
+    keyids: list[str], allow_skip: bool
+) -> Optional[str]:
     prompt = "Please press '0' to add key, or enter '<number>' to remove key"
     choices = [str(i) for i in range(len(keyids) + 1)]
-    default = ...  # no default
+    default: Any = ...  # no default
 
     if allow_skip:
         prompt += ". Press enter to continue"
         default = -1
 
-    choice = IntPrompt.ask(
+    choice: int = IntPrompt.ask(
         prompt,
         choices=choices,
         default=default,
         show_choices=False,
         show_default=False,
     )
-    if choice not in [-1, 0]:
-        choice = keyids[choice - 1]
 
-    return choice
+    if choice == -1:
+        raise Continue
+
+    elif choice == 0:
+        return None
+
+    return keyids[choice - 1]
 
 
 def _configure_root_keys_prompt(root: Root) -> None:
@@ -263,19 +271,17 @@ def _configure_root_keys_prompt(root: Root) -> None:
         missing = max(0, root_role.threshold - len(root_role.keyids))
         _print_missing_key_info(root_role.threshold, missing)
 
-        # Skip prompt, if user must add key
-        if not root_role.keyids:
-            choice = 0
+        # Default choice is None -> add key
+        choice = None
+        if root_role.keyids:
+            try:
+                choice = _add_remove_skip_key_prompt(
+                    root_role.keyids, allow_skip=(not missing)
+                )
+            except Continue:
+                break
 
-        else:
-            choice = _add_remove_skip_key_prompt(
-                root_role.keyids, allow_skip=(not missing)
-            )
-
-        if choice == -1:  # Continue
-            break
-
-        elif choice == 0:  # Add key
+        if choice is None:  # Add key
             new_key = _load_key_prompt(root)
             if not new_key:
                 continue
@@ -316,12 +322,10 @@ def _configure_online_key_prompt(root: Root) -> None:
     console.print(f"Added online key: '{new_key.keyid}'")
 
 
-def _choose_signing_key_prompt(
-    keys: list[Key], allow_skip: bool
-) -> Optional[Key]:
+def _choose_signing_key_prompt(keys: list[Key], allow_skip: bool) -> Key:
     prompt = "Please enter '<number>' to choose a signing key"
     choices = [str(i) for i in range(1, len(keys) + 1)]
-    default = ...  # no default
+    default: Any = ...  # no default
 
     if allow_skip:
         prompt += ", or press enter to continue"
@@ -336,7 +340,7 @@ def _choose_signing_key_prompt(
     )
 
     if choice == -1:  # Continue
-        return None
+        raise Continue
 
     # Get signing key
     return keys[choice - 1]
@@ -376,9 +380,9 @@ def _add_root_signatures_prompt(
         keys = _filter_and_print_keys_for_signing(results)
 
         allow_skip = bool(root_result.signed)
-        key = _choose_signing_key_prompt(keys, allow_skip)
-
-        if not key:
+        try:
+            key = _choose_signing_key_prompt(keys, allow_skip)
+        except Continue:
             break
 
         _add_signature_prompt(root_md, key)
