@@ -68,7 +68,8 @@ def sign(root_in, prev_root_in, payload_out) -> None:
     console.print(Markdown("## Sign"))
     results = _filter_root_verification_results(root_result)
     keys = _filter_and_print_keys_for_signing(results)
-    key = _choose_signing_key_prompt(keys, allow_skip=False)
+    key_idx = _choose_signing_key_prompt(len(keys), allow_skip=False)
+    key = keys[key_idx - 1]
     signature = _add_signature_prompt(root_md, key)
 
     ###########################################################################

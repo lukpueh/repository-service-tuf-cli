@@ -177,7 +177,7 @@ def _expiry_prompt(role: str) -> Tuple[int, datetime]:
     Use per-role defaults from ExpirationSettings.
     """
     days = _PositiveIntPrompt.ask(
-        f"Please enter days until expiry for '{role}'",
+        f"Please enter days until expiry for {role} role",
         default=getattr(ExpirationSettings, role),
     )
     date = datetime.utcnow() + timedelta(days=days)
@@ -187,10 +187,9 @@ def _expiry_prompt(role: str) -> Tuple[int, datetime]:
 
 
 def _expiration_settings_prompt() -> Tuple[ExpirationSettings, datetime]:
-    """Prompt for expiry days for all roles, return as ExpirationSettings.
+    """Prompt for expiry days for all roles, return as ExpirationSettings,
+    and expiration date (for root only).
 
-    NOTE: We also return the expiration date for root only. This makes the
-    interface a bit weird, but it is what the caller needs.
     """
     expiration_settings = ExpirationSettings()
     for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
@@ -203,18 +202,17 @@ def _expiration_settings_prompt() -> Tuple[ExpirationSettings, datetime]:
 
 
 def _service_settings_prompt() -> ServiceSettings:
+    """Prompt for number of bins and targets base URL,
+    return as ServiceSettings."""
     number_of_bins = IntPrompt.ask(
-        "Choose the number of delegated hash bin roles",
+        "Please enter number of delegated hash bins",
         default=ServiceSettings.number_of_delegated_bins,
         choices=[str(2**i) for i in range(1, 15)],
         show_default=True,
         show_choices=True,
     )
     # TODO: validate url
-    targets_base_url = Prompt.ask(
-        "Please enter the targets base URL "
-        "(e.g. https://www.example.com/downloads/)"
-    )
+    targets_base_url = Prompt.ask("Please enter targets base URL")
     if not targets_base_url.endswith("/"):
         targets_base_url += "/"
     return ServiceSettings(number_of_bins, targets_base_url)
@@ -225,22 +223,18 @@ def _root_threshold_prompt() -> int:
     return _PositiveIntPrompt.ask("Please enter root threshold")
 
 
-class Continue(Exception):
-    pass
+def _choose_add_remove_skip_key_prompt(key_count: int, allow_skip: bool) -> int:
+    """Prompt for choice"""
 
-
-def _add_remove_skip_key_prompt(
-    keyids: list[str], allow_skip: bool
-) -> Optional[str]:
     prompt = "Please press '0' to add key, or enter '<number>' to remove key"
-    choices = [str(i) for i in range(len(keyids) + 1)]
+    choices = [str(i) for i in range(key_count + 1)]
     default: Any = ...  # no default
 
     if allow_skip:
         prompt += ". Press enter to continue"
         default = -1
 
-    choice: int = IntPrompt.ask(
+    return IntPrompt.ask(
         prompt,
         choices=choices,
         default=default,
@@ -248,24 +242,16 @@ def _add_remove_skip_key_prompt(
         show_default=False,
     )
 
-    if choice == -1:
-        raise Continue
-
-    elif choice == 0:
-        return None
-
-    return keyids[choice - 1]
-
 
 def _configure_root_keys_prompt(root: Root) -> None:
     """Prompt dialog to add or remove root key in passed root, until user exit.
 
     - Print if and how many root keys are missing to meet the threshold
     - Print current root keys
-    - Prompt for user choice to add or remove key, or to continue (exit)
-        - "continue" choice is only available, if threshold is met
+    - Prompt for user choice to add or remove key, or to skip (exit)
+        - "skip" choice is only available, if threshold is met
         - "remove" choice is only available, if keys exist
-        - "add" choice is only shown, if "remove" or "exit" is also available,
+        - "add" choice is only shown, if "remove" or "skip" is available,
           otherwise, we branch right into "add" dialog
 
     """
@@ -277,17 +263,19 @@ def _configure_root_keys_prompt(root: Root) -> None:
         missing = max(0, root_role.threshold - len(root_role.keyids))
         _print_missing_key_info(root_role.threshold, missing)
 
-        # Default choice is None -> add key
-        choice = None
-        if root_role.keyids:
-            try:
-                choice = _add_remove_skip_key_prompt(
-                    root_role.keyids, allow_skip=(not missing)
-                )
-            except Continue:
-                break
+        # Prompt for choice (unless user must add keys)
+        if not root_role.keyids:
+            choice = 0
+        else:
+            choice = _choose_add_remove_skip_key_prompt(
+                len(root_role.keyids), allow_skip=(not missing)
+            )
 
-        if choice is None:  # Add key
+        # Apply choice
+        if choice == -1: # skip
+            break
+
+        elif choice == 0: # add
             new_key = _load_key_prompt(root)
             if not new_key:
                 continue
@@ -297,10 +285,11 @@ def _configure_root_keys_prompt(root: Root) -> None:
             root.add_key(new_key, Root.type)
             console.print(f"Added root key '{name}'")
 
-        else:  # Remove key
-            key = root.get_key(choice)
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
-            root.revoke_key(key.keyid, Root.type)
+        else: # remove
+            keyid = root_role.keyids[choice - 1]
+            key = root.get_key(keyid)
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
+            root.revoke_key(keyid, Root.type)
             console.print(f"Removed '{name}'")
 
 
@@ -328,28 +317,22 @@ def _configure_online_key_prompt(root: Root) -> None:
     console.print(f"Added online key: '{new_key.keyid}'")
 
 
-def _choose_signing_key_prompt(keys: list[Key], allow_skip: bool) -> Key:
+def _choose_signing_key_prompt(key_count: int, allow_skip: bool) -> int:
     prompt = "Please enter '<number>' to choose a signing key"
-    choices = [str(i) for i in range(1, len(keys) + 1)]
+    choices = [str(i) for i in range(1, key_count + 1)]
     default: Any = ...  # no default
 
     if allow_skip:
         prompt += ", or press enter to continue"
         default = -1
 
-    choice = IntPrompt.ask(
+    return IntPrompt.ask(
         prompt,
         choices=choices,
         default=default,
         show_choices=False,
         show_default=False,
     )
-
-    if choice == -1:  # Continue
-        raise Continue
-
-    # Get signing key
-    return keys[choice - 1]
 
 
 def _add_signature_prompt(metadata: Metadata, key: Key) -> Signature:
@@ -385,11 +368,14 @@ def _add_root_signatures_prompt(
         results = _filter_root_verification_results(root_result)
         keys = _filter_and_print_keys_for_signing(results)
 
-        allow_skip = bool(root_result.signed)
-        try:
-            key = _choose_signing_key_prompt(keys, allow_skip)
-        except Continue:
+        choice = _choose_signing_key_prompt(
+            len(keys), allow_skip=bool(root_result.signed)
+        )
+        if choice == -1:
             break
+
+        else:
+            key = keys[choice - 1]
 
         _add_signature_prompt(root_md, key)
 
