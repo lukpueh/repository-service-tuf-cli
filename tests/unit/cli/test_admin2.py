@@ -5,12 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pretend import stub
-
-from cryptography.hazmat.primitives.serialization import (
-    load_pem_private_key,
-)
-
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
 from tuf.api.metadata import Metadata, Root
 
@@ -193,9 +189,10 @@ def ed25519_key():
         },
     )
 
+
 @pytest.fixture
 def ed25519_signer(ed25519_key):
-    with open(f"{_PEMS / 'ed'}") as f:
+    with open(f"{_PEMS / 'ed'}", "rb") as f:
         private_pem = f.read()
 
     private_key = load_pem_private_key(private_pem, b"hunter2")
@@ -452,9 +449,16 @@ class TestHelpers:
             result = helpers._choose_signing_key_prompt(1, True)
         assert result == -1
 
-    def test_add_signature_prompt(self):
+    def test_add_signature_prompt(self, ed25519_signer):
         metadata = Metadata(Root())
-
+        # Sign until success (two attempts)
+        # 1. load signer raises error
+        # 2. load signer returns signer
         with patch(
-             f"{_HELPERS}._load_signer_from_file_prompt"
-        )
+            f"{_HELPERS}._load_signer_from_file_prompt",
+            side_effect=[ValueError(), ed25519_signer],
+        ):
+            signature = helpers._add_signature_prompt(
+                metadata, ed25519_signer.public_key
+            )
+        assert signature.keyid in metadata.signatures

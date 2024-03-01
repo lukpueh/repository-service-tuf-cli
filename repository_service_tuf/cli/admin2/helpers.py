@@ -353,7 +353,7 @@ def _choose_signing_key_prompt(key_count: int, allow_skip: bool) -> int:
 
 
 def _add_signature_prompt(metadata: Metadata, key: Key) -> Signature:
-    """Prompt for signing key and add signature to metadata until success. """
+    """Prompt for signing key and add signature to metadata until success."""
     while True:
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
         try:
