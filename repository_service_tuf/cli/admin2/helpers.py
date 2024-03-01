@@ -329,7 +329,13 @@ def _configure_online_key_prompt(root: Root) -> None:
 
 
 def _choose_signing_key_prompt(key_count: int, allow_skip: bool) -> int:
-    prompt = "Please enter '<number>' to choose a signing key"
+    """Prompt for signing key user choice, return:
+
+    -1: skip (only if `allow_skip` is true)
+     i: signing key by index (starts at 1!)
+    """
+
+    prompt = "Please enter signing key index"
     choices = [str(i) for i in range(1, key_count + 1)]
     default: Any = ...  # no default
 
@@ -347,6 +353,7 @@ def _choose_signing_key_prompt(key_count: int, allow_skip: bool) -> int:
 
 
 def _add_signature_prompt(metadata: Metadata, key: Key) -> Signature:
+    """Prompt for signing key and add signature to metadata until success. """
     while True:
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
         try:

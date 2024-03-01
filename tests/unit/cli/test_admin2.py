@@ -6,8 +6,13 @@ from unittest.mock import patch
 
 import pytest
 from pretend import stub
+
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key,
+)
+
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
-from tuf.api.metadata import Root
+from tuf.api.metadata import Metadata, Root
 
 from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
@@ -187,6 +192,14 @@ def ed25519_key():
             "scheme": "ed25519",
         },
     )
+
+@pytest.fixture
+def ed25519_signer(ed25519_key):
+    with open(f"{_PEMS / 'ed'}") as f:
+        private_pem = f.read()
+
+    private_key = load_pem_private_key(private_pem, b"hunter2")
+    return CryptoSigner(private_key, ed25519_key)
 
 
 @pytest.fixture
@@ -425,3 +438,23 @@ class TestHelpers:
             helpers._configure_online_key_prompt(root)
 
         _assert_online_key(key2)
+
+    def test_choose_signing_key_prompt(self):
+        # prompt for choice until in allowed range, default is disallowed
+        inputs = ["-1", "", "0", "2", "1"]
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._choose_signing_key_prompt(1, False)
+        assert result == 1
+
+        # default allowed but cannot be entered explicitly
+        inputs = ["-1", ""]
+        with patch(_PROMPT, side_effect=inputs):
+            result = helpers._choose_signing_key_prompt(1, True)
+        assert result == -1
+
+    def test_add_signature_prompt(self):
+        metadata = Metadata(Root())
+
+        with patch(
+             f"{_HELPERS}._load_signer_from_file_prompt"
+        )
