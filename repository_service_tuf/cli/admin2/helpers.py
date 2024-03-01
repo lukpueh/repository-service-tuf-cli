@@ -299,13 +299,14 @@ def _configure_root_keys_prompt(root: Root) -> None:
             key = root.get_key(keyid)
             name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
             root.revoke_key(keyid, Root.type)
-            console.print(f"Removed '{name}'")
+            console.print(f"Removed root key '{name}'")
 
 
 def _configure_online_key_prompt(root: Root) -> None:
     """Prompt dialog to set or optionally update the online key."""
     current_key = _get_online_key(root)
     if current_key:
+        # TODO: Is the info even helpful?
         console.print(f"Current online key is: '{current_key.keyid}'")
         if not Confirm.ask(
             "Do you want to change the online key?", default=True
@@ -323,7 +324,8 @@ def _configure_online_key_prompt(root: Root) -> None:
             root.revoke_key(current_key.keyid, role_name)
         root.add_key(new_key, role_name)
 
-    console.print(f"Added online key: '{new_key.keyid}'")
+    console.print(f"Configured file-based online key: '{new_key.keyid}'")
+    console.print(f"Expected private key file name is: '{new_key.keyid}'")
 
 
 def _choose_signing_key_prompt(key_count: int, allow_skip: bool) -> int:
