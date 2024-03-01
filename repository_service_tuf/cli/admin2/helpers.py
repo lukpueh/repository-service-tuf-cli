@@ -308,7 +308,7 @@ def _configure_online_key_prompt(root: Root) -> None:
     if current_key:
         console.print(f"Current online key is: '{current_key.keyid}'")
         if not Confirm.ask(
-            "Do you want to change the online key?", default="y"
+            "Do you want to change the online key?", default=True
         ):
             return
 

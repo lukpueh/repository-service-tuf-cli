@@ -1,4 +1,5 @@
 import json
+from copy import copy
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -330,7 +331,7 @@ class TestHelpers:
             assert result == helpers.ServiceSettings(*expected)
 
     def test_root_threshold_prompt(self):
-        # prompt for threshold until postive integer
+        # prompt for threshold until positive integer
         inputs = ["-1", "0", "X", "5"]
         with patch(_PROMPT, side_effect=inputs):
             result = helpers._root_threshold_prompt()
@@ -374,3 +375,53 @@ class TestHelpers:
             helpers._configure_root_keys_prompt(root)
 
         assert ed25519_key.keyid in root.keys
+        assert [ed25519_key.keyid] == root.roles["root"].keyids
+
+    def test_configure_online_key_prompt(self, ed25519_key):
+        # Create empty root
+        root = Root()
+
+        def _assert_online_key(key):
+            id_ = key.keyid
+            assert key == root.keys[id_]
+            assert id_ not in root.roles["root"].keyids
+            assert [id_] == root.roles["timestamp"].keyids
+            assert [id_] == root.roles["snapshot"].keyids
+            assert [id_] == root.roles["targets"].keyids
+            assert (
+                root.keys[id_].unrecognized_fields[helpers.KEY_URI_FIELD]
+                == f"fn:{id_}"
+            )
+
+        # Add new key (no user choice)
+        with patch(
+            f"{_HELPERS}._load_key_prompt",
+            return_value=ed25519_key,
+        ):
+            helpers._configure_online_key_prompt(root)
+
+        _assert_online_key(ed25519_key)
+
+        # Change key (two attempts)
+        # 1. fail  (load returns None)
+        # 2. succeed (load returns key2)
+        key2 = copy(ed25519_key)
+        key2.keyid = "fake_keyid2"
+        assert ed25519_key.keyid != key2.keyid
+
+        with (
+            patch(_PROMPT, side_effect=[""]),  # default user choice: change
+            patch(
+                f"{_HELPERS}._load_key_prompt",
+                side_effect=[None, key2],
+            ),
+        ):
+            helpers._configure_online_key_prompt(root)
+
+        _assert_online_key(key2)
+
+        # Skip key change
+        with patch(_PROMPT, side_effect=["N"]):  # user choice: skip
+            helpers._configure_online_key_prompt(root)
+
+        _assert_online_key(key2)
