@@ -462,3 +462,42 @@ class TestHelpers:
                 metadata, ed25519_signer.public_key
             )
         assert signature.keyid in metadata.signatures
+
+    def test_add_root_signatures_prompt(self, ed25519_key):
+        # Metadata fully verified, exit early
+        prev_root = stub()
+        root_md = stub(
+            signed=stub(),
+            signed_bytes=stub(),
+            signatures=stub(),
+        )
+        root_result = stub(verified=True)
+        root_md.signed.get_root_verification_result = lambda *a: root_result
+        helpers._add_root_signatures_prompt(root_md, prev_root)
+
+        # Metadata not verified
+        # - choose key to sign (choose: 1)
+        # - the skip (choose: -1)
+        root_result = stub(verified=False, signed=True)
+        root_md.signed.get_root_verification_result = lambda *a: root_result
+        keys = [ed25519_key]
+
+        with (
+            patch(
+                f"{_HELPERS}._filter_root_verification_results",
+                return_value=stub(),
+            ),
+            patch(
+                f"{_HELPERS}._filter_and_print_keys_for_signing",
+                return_value=keys,
+            ),
+            patch(
+                f"{_HELPERS}._choose_signing_key_prompt",
+                side_effect=[1, -1],
+            ),
+            patch(
+                f"{_HELPERS}._add_signature_prompt",
+                lambda *a: None,
+            ),
+        ):
+            helpers._add_root_signatures_prompt(root_md, prev_root)
