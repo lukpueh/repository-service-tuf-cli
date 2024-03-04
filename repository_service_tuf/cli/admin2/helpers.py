@@ -372,7 +372,7 @@ def _add_signature_prompt(metadata: Metadata, key: Key) -> Signature:
 def _add_root_signatures_prompt(
     root_md: Metadata[Root], prev_root: Optional[Root]
 ) -> None:
-
+    # TODO: Add docstring
     while True:
         root_result = root_md.signed.get_root_verification_result(
             prev_root,

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pretend import stub
+from pretend import stub, call, call_recorder
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
 from tuf.api.metadata import Metadata, Root
 
@@ -464,23 +464,25 @@ class TestHelpers:
         assert signature.keyid in metadata.signatures
 
     def test_add_root_signatures_prompt(self, ed25519_key):
-        # Metadata fully verified, exit early
         prev_root = stub()
         root_md = stub(
             signed=stub(),
             signed_bytes=stub(),
             signatures=stub(),
         )
+        # Metadata fully verified (exit loop early)
         root_result = stub(verified=True)
         root_md.signed.get_root_verification_result = lambda *a: root_result
         helpers._add_root_signatures_prompt(root_md, prev_root)
 
-        # Metadata not verified
-        # - choose key to sign (choose: 1)
-        # - the skip (choose: -1)
+        # Metadata not verified (run loop twice)
+        # 1. choose key to sign (choose: 1)
+        # 2. skip signing (choose: -1)
         root_result = stub(verified=False, signed=True)
         root_md.signed.get_root_verification_result = lambda *a: root_result
         keys = [ed25519_key]
+
+        mock_add_sig = call_recorder(lambda root, key: None)
 
         with (
             patch(
@@ -497,7 +499,9 @@ class TestHelpers:
             ),
             patch(
                 f"{_HELPERS}._add_signature_prompt",
-                lambda *a: None,
+                mock_add_sig,
             ),
         ):
             helpers._add_root_signatures_prompt(root_md, prev_root)
+
+        assert mock_add_sig.calls == [call(root_md, ed25519_key)]
