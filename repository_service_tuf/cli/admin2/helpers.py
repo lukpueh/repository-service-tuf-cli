@@ -262,23 +262,20 @@ def _configure_root_keys_prompt(root: Root) -> None:
           otherwise, we branch right into "add" dialog
 
     """
-
-    root_role = root.get_delegated_role(Root.type)
     while True:
-        _print_current_root_keys(root)
+        keys = _print_root_keys(root)
 
-        missing = max(0, root_role.threshold - len(root_role.keyids))
-        _print_missing_key_info(root_role.threshold, missing)
+        threshold = root.roles[Root.type].threshold
+        missing = max(0, threshold - len(keys))
+        _print_missing_key_info(threshold, missing)
 
         # Prompt for choice unless user must add keys
-        if not root_role.keyids:
+        if not keys:
             choice = 0
 
         else:
             allow_skip = not missing
-            choice = _choose_add_remove_skip_key_prompt(
-                len(root_role.keyids), allow_skip
-            )
+            choice = _choose_add_remove_skip_key_prompt(len(keys), allow_skip)
 
         # Apply choice
         if choice == -1:  # skip
@@ -295,10 +292,9 @@ def _configure_root_keys_prompt(root: Root) -> None:
             console.print(f"Added root key '{name}'")
 
         else:  # remove
-            keyid = root_role.keyids[choice - 1]
-            key = root.get_key(keyid)
-            name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
-            root.revoke_key(keyid, Root.type)
+            key = keys[choice - 1]
+            name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
+            root.revoke_key(key.keyid, Root.type)
             console.print(f"Removed root key '{name}'")
 
 
@@ -384,7 +380,7 @@ def _add_root_signatures_prompt(
             break
 
         results = _filter_root_verification_results(root_result)
-        keys = _filter_and_print_keys_for_signing(results)
+        keys = _print_keys_for_signing(results)
 
         choice = _choose_signing_key_prompt(
             len(keys), allow_skip=bool(root_result.signed)
@@ -446,10 +442,8 @@ def _print_root(root: Root):
 def _filter_root_verification_results(
     root_result: RootVerificationResult,
 ) -> list[VerificationResult]:
-    """Filter unverified distinct results."""
-    # NOTE: Tried a few different things to construct `results`,
-    # including list/dict-comprehensions, map, reduce, lambda, etc.
-    # This seems the least ugly / most readable solution:
+    """Filter unverified results with distinct (missing, unsigned) fields."""
+
     results: list[VerificationResult] = []
     if not root_result.first.verified:
         results.append(root_result.first)
@@ -466,9 +460,13 @@ def _filter_root_verification_results(
     return results
 
 
-def _filter_and_print_keys_for_signing(
+def _print_keys_for_signing(
     results: list[VerificationResult],
 ) -> list[Key]:
+    """Print public keys eligible for signing and return in printed order.
+
+    The indexed output can be used to choose a signing key (1-based).
+    """
     keys: list[Key] = []
     idx = 0
     for result in results:
@@ -481,13 +479,21 @@ def _filter_and_print_keys_for_signing(
     return keys
 
 
-def _print_current_root_keys(root: Root) -> None:
+def _print_root_keys(root: Root) -> list[Key]:
+    """Print current root keys and return in printed order.
+
+    The indexed output can be used to choose a key (1-based).
+    """
+    keys: list[Key] = []
     root_role = root.get_delegated_role(Root.type)
     console.print("Current signing keys are:")
     for idx, keyid in enumerate(root_role.keyids, start=1):
         key = root.get_key(keyid)
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
         console.print(f"{idx}. {name}")
+        keys.append(key)
+
+    return keys
 
 
 def _print_missing_key_info(threshold: int, missing: int) -> None:
