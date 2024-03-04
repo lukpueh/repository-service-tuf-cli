@@ -115,9 +115,9 @@ class TestCLI:
             "",  # Please press 0 to add key, or remove key by entering its index. Press enter to contiue
             f"{_PEMS / 'rsa.pub'}",  #  Please enter path to public key
             "2",  # Please enter signing key index
-            f"{_PEMS / 'ed'}",  # Please enter path to encrypted local private key
+            f"{_PEMS / 'ed'}",  # Please enter path to encrypted private key
             "1",  # Please enter signing key index
-            f"{_PEMS / 'ec'}",  # Please enter path to encrypted local private key
+            f"{_PEMS / 'ec'}",  # Please enter path to encrypted private key
         ]
 
         result = self._invoke(client, ceremony, inputs, [])
@@ -133,22 +133,22 @@ class TestCLI:
 
     def test_update(self, client, patch_getpass, patch_utcnow):
         inputs = [
-            "365",  # Please enter number of days from now, when root should expire (100)
-            "y",  # Do you want to change the root threshold? [y/n] (y)
+            "",  # Please enter days until expiry for root role (365)
+            "",  # Do you want to change the threshold? [y/n] (y)
             "1",  # Please enter root threshold
-            "2",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue
-            "1",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue
-            f"{_PEMS / 'rsa.pub'}",  # Please enter a public key path
+            "2",  # Please press 0 to add key, or remove key by entering its index. Press enter to continue
+            "1",  # Please press 0 to add key, or remove key by entering its index. Press enter to continue
+            f"{_PEMS / 'rsa.pub'}",  # Please enter path to public key
             "rsa root key",  # Please enter a key name
-            "",  # Please press '0' to add key, or enter '<number>' to remove key. Press enter to continue:
-            "y",  # Do you want to change the online key? [y/n] (y)
-            f"{_PEMS / 'ec.pub'}",  # Please enter a public key path
-            "1",  # Please enter '<number>' to choose a signing key
-            f"{_PEMS / 'ed'}",  # Please enter path to encrypted local private key
-            "1",  # Please enter '<number>' to choose a signing key
-            f"{_PEMS / 'ec'}",  # Please enter path to encrypted local private key
-            "1",  # Please enter '<number>' to choose a signing key
-            f"{_PEMS / 'rsa'}",  # Please enter path to encrypted local private key
+            "",  # Please press 0 to add key, or remove key by entering its index. Press enter to continue:
+            "",  # Do you want to change the online key? [y/n] (y)
+            f"{_PEMS / 'ec.pub'}",  # Please enter path to public key
+            "1",  # Please enter signing key index
+            f"{_PEMS / 'ed'}",  # Please enter path to encrypted private key
+            "1",  # Please enter signing key index
+            f"{_PEMS / 'ec'}",  # Please enter path to encrypted private key
+            "1",  # Please enter signing key index
+            f"{_PEMS / 'rsa'}",  # Please enter path to encrypted private key
         ]
         args = [f"{_ROOTS / 'v1.json'}"]
 
@@ -164,8 +164,8 @@ class TestCLI:
 
     def test_sign(self, client, patch_getpass):
         inputs = [
-            "4",  # Please enter '<number>' to choose a signing key:
-            f"{_PEMS / 'rsa'}",  # Please enter path to encrypted local private key:
+            "4",  # Please enter signing key index
+            f"{_PEMS / 'rsa'}",  # Please enter path to encrypted private key
         ]
         args = [
             f"{_ROOTS / 'v2.json'}",

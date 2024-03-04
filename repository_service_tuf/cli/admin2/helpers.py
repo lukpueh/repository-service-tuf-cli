@@ -470,7 +470,9 @@ def _print_keys_for_signing(
     keys: list[Key] = []
     idx = 0
     for result in results:
-        console.print(f"Missing {result.missing} signature(s) from any of:")
+        m = result.missing
+        s = "s" if m > 1 else ""
+        console.print(f"{m} signature{s} missing from any of:")
         for idx, key in enumerate(result.unsigned.values(), start=idx + 1):
             name = key.unrecognized_fields.get(KEY_NAME_FIELD, key.keyid)
             console.print(f"{idx}. {name}")
@@ -501,8 +503,7 @@ def _print_root_keys(root: Root) -> list[Key]:
 
 def _print_missing_key_info(threshold: int, missing: int) -> None:
     if missing:
-        console.print(
-            f"{missing} more key(s) needed for threshold {threshold}"
-        )
+        s = "s" if missing > 1 else ""
+        console.print(f"{missing} key{s} missing for threshold {threshold}.")
     else:
-        console.print(f"Threshold {threshold} met, more keys can be added.")
+        console.print(f"Threshold {threshold} is met, more keys can be added.")
