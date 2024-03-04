@@ -154,7 +154,7 @@ def _load_key_prompt(root: Root) -> Optional[Key]:
 def _key_name_prompt(root) -> str:
     """Prompt for key name until success."""
     while True:
-        name = Prompt.ask("Please enter a key name")
+        name = Prompt.ask("Please enter key name")
         if not name:
             console.print("Key name cannot be empty.")
             continue
@@ -233,7 +233,7 @@ def _choose_add_remove_skip_key_prompt(
      i: remove key by index (starts at 1!)
     """
 
-    prompt = "Please press 0 to add a key, or remove a key by its index"
+    prompt = "Please press 0 to add key, or remove key by entering its index"
     choices = [str(i) for i in range(key_count + 1)]
     default: Any = ...  # no default
 
@@ -485,9 +485,12 @@ def _print_root_keys(root: Root) -> list[Key]:
     The indexed output can be used to choose a key (1-based).
     """
     keys: list[Key] = []
-    root_role = root.get_delegated_role(Root.type)
-    console.print("Current signing keys are:")
-    for idx, keyid in enumerate(root_role.keyids, start=1):
+    keyids = root.roles[Root.type].keyids
+
+    if keyids:
+        console.print("Current signing keys:")
+
+    for idx, keyid in enumerate(keyids, start=1):
         key = root.get_key(keyid)
         name = key.unrecognized_fields.get(KEY_NAME_FIELD, keyid)
         console.print(f"{idx}. {name}")
