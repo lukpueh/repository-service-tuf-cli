@@ -6,9 +6,14 @@ from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pretend import stub, call, call_recorder
+from pretend import call, call_recorder, stub
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
-from tuf.api.metadata import Metadata, Root
+from tuf.api.metadata import (
+    Metadata,
+    Root,
+    RootVerificationResult,
+    VerificationResult,
+)
 
 from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
@@ -505,3 +510,43 @@ class TestHelpers:
             helpers._add_root_signatures_prompt(root_md, prev_root)
 
         assert mock_add_sig.calls == [call(root_md, ed25519_key)]
+
+    def test_get_root_keys(self, ed25519_key):
+        root = Root()
+        ed25519_key2 = copy(ed25519_key)
+        ed25519_key2.keyid = "fake_keyid2"
+        assert ed25519_key.keyid != ed25519_key2.keyid
+        root.add_key(ed25519_key, "root")
+        root.add_key(ed25519_key2, "root")
+
+        keys = helpers._get_root_keys(root)
+        assert keys == {
+            ed25519_key.keyid: ed25519_key,
+            ed25519_key2.keyid: ed25519_key2,
+        }
+
+    def test_get_online_key(self, ed25519_key):
+        root = Root()
+        assert not helpers._get_online_key(root)
+
+        # NOTE: cli doesn't validate that all online roles have the same key
+        root.add_key(ed25519_key, "timestamp")
+        assert helpers._get_online_key(root) == ed25519_key
+
+    def test_filter_root_verification_results(self):
+        data = [
+            (True, True, None, None, None, None, 0),
+            (False, True, None, None, None, None, 1),
+            (True, False, None, None, None, None, 1),
+            (False, False, 1, 1, "foo", "foo", 1),
+            (False, False, 1, 2, "foo", "foo", 2),
+            (False, False, 1, 1, "foo", "bar", 2),
+        ]
+
+        for verif1, verif2, miss1, miss2, unsig1, unsig2, len_ in data:
+            root_result = stub(
+                first=stub(verified=verif1, missing=miss1, unsigned=unsig1),
+                second=stub(verified=verif2, missing=miss2, unsigned=unsig2),
+            )
+            results = helpers._filter_root_verification_results(root_result)
+            assert len(results) == len_, root_result

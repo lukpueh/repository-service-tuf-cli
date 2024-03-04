@@ -447,17 +447,19 @@ def _filter_root_verification_results(
     root_result: RootVerificationResult,
 ) -> list[VerificationResult]:
     """Filter unverified distinct results."""
-
     # NOTE: Tried a few different things to construct `results`,
     # including list/dict-comprehensions, map, reduce, lambda, etc.
-    # This seems the least ugly solution...
+    # This seems the least ugly / most readable solution:
     results: list[VerificationResult] = []
     if not root_result.first.verified:
         results.append(root_result.first)
 
     if not root_result.second.verified and (
-        (root_result.first.unsigned, root_result.first.missing)
-        != (root_result.second.unsigned, root_result.second.missing)
+        root_result.first.verified
+        or (
+            (root_result.first.unsigned, root_result.first.missing)
+            != (root_result.second.unsigned, root_result.second.missing)
+        )
     ):
         results.append(root_result.second)
 
