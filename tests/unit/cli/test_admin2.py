@@ -8,12 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pretend import call, call_recorder, stub
 from securesystemslib.signer import CryptoSigner, Key, SSlibKey
-from tuf.api.metadata import (
-    Metadata,
-    Root,
-    RootVerificationResult,
-    VerificationResult,
-)
+from tuf.api.metadata import Metadata, Root
 
 from repository_service_tuf.cli.admin2 import helpers
 from repository_service_tuf.cli.admin2.ceremony import ceremony
@@ -422,7 +417,6 @@ class TestHelpers:
         # 2. succeed (load returns key2)
         key2 = copy(ed25519_key)
         key2.keyid = "fake_keyid2"
-        assert ed25519_key.keyid != key2.keyid
 
         with (
             patch(_PROMPT, side_effect=[""]),  # default user choice: change
@@ -495,7 +489,7 @@ class TestHelpers:
                 return_value=stub(),
             ),
             patch(
-                f"{_HELPERS}._filter_and_print_keys_for_signing",
+                f"{_HELPERS}._print_keys_for_signing",
                 return_value=keys,
             ),
             patch(
@@ -515,7 +509,6 @@ class TestHelpers:
         root = Root()
         ed25519_key2 = copy(ed25519_key)
         ed25519_key2.keyid = "fake_keyid2"
-        assert ed25519_key.keyid != ed25519_key2.keyid
         root.add_key(ed25519_key, "root")
         root.add_key(ed25519_key2, "root")
 
@@ -550,3 +543,22 @@ class TestHelpers:
             )
             results = helpers._filter_root_verification_results(root_result)
             assert len(results) == len_, root_result
+
+    def test_print_keys_for_signing(self, ed25519_key):
+        ed25519_key2 = copy(ed25519_key)
+        ed25519_key2.keyid = "fake_keyid2"
+        results = [
+            stub(missing=1, unsigned={ed25519_key.keyid: ed25519_key}),
+            stub(missing=1, unsigned={ed25519_key2.keyid: ed25519_key2}),
+        ]
+        keys = helpers._print_keys_for_signing(results)
+        assert keys == [ed25519_key, ed25519_key2]
+
+    def test_print_root_keys(self, ed25519_key):
+        ed25519_key2 = copy(ed25519_key)
+        ed25519_key2.keyid = "fake_keyid2"
+        root = Root()
+        root.add_key(ed25519_key, "root")
+        root.add_key(ed25519_key2, "root")
+        keys = helpers._print_root_keys(root)
+        assert keys == [ed25519_key, ed25519_key2]
