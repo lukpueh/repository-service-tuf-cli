@@ -1,11 +1,13 @@
 import json
 from copy import copy
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import click
 import pytest
+from click.testing import CliRunner
 from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
     load_pem_public_key,
@@ -29,7 +31,7 @@ _HELPERS = "repository_service_tuf.cli.admin2.helpers"
 
 
 @pytest.fixture
-def patch_getpass(monkeypatch):
+def patch_getpass(monkeypatch: pytest.MonkeyPatch):
     """Fixture to mock password prompt return value for encrypted test keys.
 
     NOTE: we need this, because getpass does not receive the inputs passed to
@@ -45,7 +47,7 @@ def patch_getpass(monkeypatch):
 
 
 @pytest.fixture
-def patch_utcnow(monkeypatch):
+def patch_utcnow(monkeypatch: pytest.MonkeyPatch):
     """Patch `utcnow` in helpers module for reproducible results."""
 
     class FakeTime(datetime):
@@ -65,7 +67,7 @@ def ed25519_key():
 
 
 @pytest.fixture
-def ed25519_signer(ed25519_key):
+def ed25519_signer(ed25519_key: SSlibKey):
     with open(f"{_PEMS / 'ed25519'}", "rb") as f:
         private_pem = f.read()
 
@@ -94,14 +96,16 @@ class TestCLI:
 
         return result
 
-    def test_ceremony(self, client, patch_getpass, patch_utcnow):
+    def test_ceremony(
+        self, client: CliRunner, patch_getpass: None, patch_utcnow: None
+    ):
         inputs = [
-            "",  # Please enter days until expiry for root role (365)
             "",  # Please enter days until expiry for timestamp role (1)
             "",  # Please enter days until expiry for snapshot role (1)
             "",  # Please enter days until expiry for targets role (365)
             "",  # Please enter days until expiry for bins role (1)
             "",  # Please enter number of delegated hash bins [2/4/8/16/32/64/128/256/512/1024/2048/4096/8192/16384] (256)
+            "",  # Please enter days until expiry for root role (365)
             "2",  # Please enter root threshold
             f"{_PEMS / 'rsa.pub'}",  # Please enter path to public key
             "my rsa key",  # Please enter key name
@@ -132,7 +136,9 @@ class TestCLI:
         assert [s["keyid"] for s in sigs_r] == [s["keyid"] for s in sigs_e]
         assert result == expected
 
-    def test_update(self, client, patch_getpass, patch_utcnow):
+    def test_update(
+        self, client: CliRunner, patch_getpass: None, patch_utcnow: None
+    ):
         inputs = [
             "",  # Please enter days until expiry for root role (365)
             "y",  # Do you want to change the threshold? [y/n] (n)
@@ -164,7 +170,7 @@ class TestCLI:
         assert [s["keyid"] for s in sigs_r] == [s["keyid"] for s in sigs_e]
         assert result == expected
 
-    def test_sign(self, client, patch_getpass):
+    def test_sign(self, client: CliRunner, patch_getpass: None):
         inputs = [
             "4",  # Please enter signing key index
             f"{_PEMS / 'rsa'}",  # Please enter path to encrypted private key
@@ -184,12 +190,12 @@ class TestCLI:
 
 class TestSignError:
 
-    def test_sign_missing_previous(self, client):
+    def test_sign_missing_previous(self, client: CliRunner):
         with pytest.raises(click.ClickException) as e:
             sign.main([f"{_ROOTS / 'v2.json'}"], standalone_mode=False)
         assert "v1 needed" in str(e)
 
-    def test_sign_already_signed(self, client):
+    def test_sign_already_signed(self, client: CliRunner):
         # Construct fake root metadata with "verified" fake verification result
         fake_result = stub(verified=True)
         fake_root = stub(
@@ -212,7 +218,7 @@ class TestSignError:
 
 
 class TestHelpers:
-    def test_load_signer_from_file_prompt(self, ed25519_key):
+    def test_load_signer_from_file_prompt(self, ed25519_key: SSlibKey):
         # success
         inputs = [f"{_PEMS / 'ed25519'}", "hunter2"]
         with patch(_PROMPT, side_effect=inputs):
@@ -286,8 +292,8 @@ class TestHelpers:
 
         assert name == "new"
 
-    def test_expiry_prompt(self, patch_utcnow):
-        # Assert bump expiry by days
+    def test_expiry_prompt(self, patch_utcnow: None):
+        # Assert prompt expiry
         days_input = 10
         with patch(_PROMPT, side_effect=[str(days_input)]):
             result = helpers._expiry_prompt("root")
@@ -297,42 +303,39 @@ class TestHelpers:
             datetime(2024, 1, 11, 0, 0, 0),  # see patch_utcnow
         )
 
-        # Assert bump per-role default expiry
+        # Assert prompt per-role default expiry
         for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-            expected_days = getattr(helpers.ExpirationSettings, role)
-            days_input = ""
-            with patch(_PROMPT, side_effect=[days_input]):
+            with patch(_PROMPT, side_effect=[""]):
                 days, _ = helpers._expiry_prompt(role)
 
-            assert days == expected_days
+            assert days == helpers.DEFAULT_EXPIRATION[role]
 
-    def test_expiration_settings_prompt(self, patch_utcnow):
-        inputs = [""] * 5
-        with patch(_PROMPT, side_effect=inputs):
-            result = helpers._expiration_settings_prompt()
-
-        # Assert default ExpirationSettings and default root expiration date
-        assert result == (
-            helpers.ExpirationSettings(),
-            datetime(2024, 12, 31, 0, 0),
-        )
-
-    def test_service_settings_prompt(self):
-        data = [
+    def test_online_settings_prompt(self):
+        test_data = [
             (
-                ("",),
-                (helpers.ServiceSettings.number_of_delegated_bins,),
+                [""] * 5,
+                (
+                    helpers.DEFAULT_EXPIRATION["timestamp"],
+                    helpers.DEFAULT_EXPIRATION["snapshot"],
+                    helpers.DEFAULT_EXPIRATION["targets"],
+                    helpers.DEFAULT_EXPIRATION["bins"],
+                    helpers.DEFAULT_NUMBER_OF_BINS,
+                ),
             ),
-            (
-                ("2",),
-                (2,),
-            ),
+            (["2"] * 5, [2] * 5),
         ]
-        for inputs, expected in data:
+        for inputs, expected in test_data:
             with patch(_PROMPT, side_effect=inputs):
-                result = helpers._service_settings_prompt()
+                result = helpers._online_settings_prompt()
 
-            assert result == helpers.ServiceSettings(*expected)
+        ts_expiry, sn_expiry, targets_expiry, bins_expiry, bins_num = expected
+        assert result == helpers.Roles(
+            None,
+            helpers.RoleSettings(ts_expiry),
+            helpers.RoleSettings(sn_expiry),
+            helpers.RoleSettings(targets_expiry),
+            helpers.BinsRoleSettings(bins_expiry, bins_num),
+        )
 
     def test_root_threshold_prompt(self):
         # prompt for threshold until positive integer
@@ -354,7 +357,7 @@ class TestHelpers:
             result = helpers._choose_add_remove_skip_key_prompt(1, True)
         assert result == -1
 
-    def test_configure_root_keys_prompt(self, ed25519_key):
+    def test_configure_root_keys_prompt(self, ed25519_key: SSlibKey):
         # Configure root keys in empty root
         # NOTE: This is quite intricate but gives us full coverage
         # The course of action is:
@@ -381,7 +384,7 @@ class TestHelpers:
         assert ed25519_key.keyid in root.keys
         assert [ed25519_key.keyid] == root.roles["root"].keyids
 
-    def test_configure_online_key_prompt(self, ed25519_key):
+    def test_configure_online_key_prompt(self, ed25519_key: SSlibKey):
         # Create empty root
         root = Root()
 
@@ -447,7 +450,7 @@ class TestHelpers:
             result = helpers._choose_signing_key_prompt(1, True)
         assert result == -1
 
-    def test_add_signature_prompt(self, ed25519_signer):
+    def test_add_signature_prompt(self, ed25519_signer: CryptoSigner):
         metadata = Metadata(Root())
         # Sign until success (two attempts)
         # 1. load signer raises error
@@ -461,7 +464,7 @@ class TestHelpers:
             )
         assert signature.keyid in metadata.signatures
 
-    def test_add_root_signatures_prompt(self, ed25519_key):
+    def test_add_root_signatures_prompt(self, ed25519_key: SSlibKey):
         prev_root = stub()
         root_md = stub(
             signed=stub(),
@@ -504,7 +507,7 @@ class TestHelpers:
 
         assert mock_add_sig.calls == [call(root_md, ed25519_key)]
 
-    def test_get_root_keys(self, ed25519_key):
+    def test_get_root_keys(self, ed25519_key: SSlibKey):
         root = Root()
         ed25519_key2 = copy(ed25519_key)
         ed25519_key2.keyid = "fake_keyid2"
@@ -517,7 +520,7 @@ class TestHelpers:
             ed25519_key2.keyid: ed25519_key2,
         }
 
-    def test_get_online_key(self, ed25519_key):
+    def test_get_online_key(self, ed25519_key: SSlibKey):
         root = Root()
         assert not helpers._get_online_key(root)
 
@@ -543,7 +546,7 @@ class TestHelpers:
             results = helpers._filter_root_verification_results(root_result)
             assert len(results) == len_, root_result
 
-    def test_print_keys_for_signing(self, ed25519_key):
+    def test_print_keys_for_signing(self, ed25519_key: SSlibKey):
         ed25519_key2 = copy(ed25519_key)
         ed25519_key2.keyid = "fake_keyid2"
         results = [
@@ -553,7 +556,7 @@ class TestHelpers:
         keys = helpers._print_keys_for_signing(results)
         assert keys == [ed25519_key, ed25519_key2]
 
-    def test_print_root_keys(self, ed25519_key):
+    def test_print_root_keys(self, ed25519_key: SSlibKey):
         ed25519_key2 = copy(ed25519_key)
         ed25519_key2.keyid = "fake_keyid2"
         root = Root()

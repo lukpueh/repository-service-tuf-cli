@@ -16,14 +16,15 @@ from repository_service_tuf.cli.admin2 import admin2
 from repository_service_tuf.cli.admin2.helpers import (
     CeremonyPayload,
     Metadatas,
+    RoleSettings,
     Settings,
     _add_root_signatures_prompt,
     _configure_online_key_prompt,
     _configure_root_keys_prompt,
-    _expiration_settings_prompt,
+    _expiry_prompt,
+    _online_settings_prompt,
     _print_root,
     _root_threshold_prompt,
-    _service_settings_prompt,
     _warn_no_save,
 )
 
@@ -47,13 +48,16 @@ def ceremony(save) -> None:
     root = Root()
 
     ###########################################################################
-    # Configure expiration and online service settings
-    console.print(Markdown("##  Metadata Expiration"))
-    expiration_settings, root_expires = _expiration_settings_prompt()
-    root.expires = root_expires
+    # Configure online role settings
+    console.print(Markdown("##  Online role settings"))
+    roles_settings = _online_settings_prompt()
 
-    console.print(Markdown("## Artifacts"))
-    service_settings = _service_settings_prompt()
+    console.print(Markdown("##  Root expiry"))
+    days, date = _expiry_prompt("root")
+    root.expires = date
+
+    # TODO: this is prone to get out of sync with root.expires
+    roles_settings.root = RoleSettings(days)
 
     ###########################################################################
     # Configure Root Keys
@@ -84,7 +88,7 @@ def ceremony(save) -> None:
     # TODO: post to API
     if save:
         metadatas = Metadatas(root_md.to_dict())
-        settings = Settings(expiration_settings, service_settings)
+        settings = Settings(roles_settings)
         payload = CeremonyPayload(settings, metadatas)
         json.dump(asdict(payload), save, indent=2)
         console.print(f"Saved result to '{save.name}'")

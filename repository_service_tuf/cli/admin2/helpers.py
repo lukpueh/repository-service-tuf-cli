@@ -50,11 +50,38 @@ KEY_NAME_FIELD = "x-rstuf-key-name"
 # Use locale's appropriate date representation to display the expiry date.
 EXPIRY_FORMAT = "%x"
 
+DEFAULT_EXPIRATION = {
+    "root": 365,
+    "timestamp": 1,
+    "snapshot": 1,
+    "targets": 365,
+    "bins": 1,
+}
+DEFAULT_NUMBER_OF_BINS = 256
+
 
 @dataclass
-class CeremonyPayload:
-    settings: "Settings"
-    metadata: "Metadatas"
+class RoleSettings:
+    expiration: int
+
+
+@dataclass
+class BinsRoleSettings(RoleSettings):
+    number_of_delegated_bins: int
+
+
+@dataclass
+class Roles:
+    root: Optional[RoleSettings]
+    timestamp: RoleSettings
+    snapshot: RoleSettings
+    targets: RoleSettings
+    bins: BinsRoleSettings
+
+
+@dataclass
+class Settings:
+    roles: Roles
 
 
 @dataclass
@@ -63,24 +90,9 @@ class Metadatas:  # accept bad spelling to disambiguate with Metadata
 
 
 @dataclass
-class Settings:
-    expiration: "ExpirationSettings"
-    services: "ServiceSettings"
-
-
-@dataclass
-class ExpirationSettings:
-    root: int = 365
-    targets: int = 365
-    snapshot: int = 1
-    timestamp: int = 1
-    bins: int = 1
-
-
-@dataclass
-class ServiceSettings:
-    number_of_delegated_bins: int = 256
-    targets_online_key: bool = True
+class CeremonyPayload:
+    settings: "Settings"
+    metadata: "Metadatas"
 
 
 @dataclass
@@ -177,7 +189,7 @@ def _expiry_prompt(role: str) -> Tuple[int, datetime]:
     """
     days = _PositiveIntPrompt.ask(
         f"Please enter days until expiry for {role} role",
-        default=getattr(ExpirationSettings, role),
+        default=DEFAULT_EXPIRATION[role],
     )
     date = datetime.utcnow() + timedelta(days=days)
     console.print(f"New expiry date is: {date:{EXPIRY_FORMAT}}")
@@ -185,32 +197,28 @@ def _expiry_prompt(role: str) -> Tuple[int, datetime]:
     return days, date
 
 
-def _expiration_settings_prompt() -> Tuple[ExpirationSettings, datetime]:
-    """Prompt for expiry days for all roles, return as ExpirationSettings,
-    and expiration date (for root only).
+def _online_settings_prompt() -> Roles:
+    """Prompt for expiry days of online roles and number of delegated bins."""
+    ts_expiry, _ = _expiry_prompt("timestamp")
+    snapshot_expiry, _ = _expiry_prompt("snapshot")
+    targets_expiry, _ = _expiry_prompt("targets")
+    bins_expiry, _ = _expiry_prompt("bins")
 
-    """
-    expiration_settings = ExpirationSettings()
-    for role in ["root", "timestamp", "snapshot", "targets", "bins"]:
-        days, date = _expiry_prompt(role)
-        setattr(expiration_settings, role, days)
-        if role == "root":
-            root_expires = date
-
-    return expiration_settings, root_expires
-
-
-def _service_settings_prompt() -> ServiceSettings:
-    """Prompt for number of bins and targets base URL,
-    return as ServiceSettings."""
-    number_of_bins = IntPrompt.ask(
+    bins_number = IntPrompt.ask(
         "Please enter number of delegated hash bins",
-        default=ServiceSettings.number_of_delegated_bins,
+        default=DEFAULT_NUMBER_OF_BINS,
         choices=[str(2**i) for i in range(1, 15)],
         show_default=True,
         show_choices=True,
     )
-    return ServiceSettings(number_of_bins)
+
+    return Roles(
+        None,
+        RoleSettings(ts_expiry),
+        RoleSettings(snapshot_expiry),
+        RoleSettings(targets_expiry),
+        BinsRoleSettings(bins_expiry, bins_number),
+    )
 
 
 def _root_threshold_prompt() -> int:
